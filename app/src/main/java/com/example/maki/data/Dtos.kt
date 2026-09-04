@@ -403,6 +403,8 @@ data class DetectResultDto(
     val items: List<DetectedItemDto> = emptyList(),
     /** Preview only: the server's signature over this frame's count. */
     val token: String? = null,
+    /** How long to wait before the next frame when the detector is rate-limited. */
+    val retry_after_ms: Long? = null,
     val rejected: String? = null,   // "liveness" | "spoof" | "no_material" | "busy"
     val message: String? = null,
     val error: String? = null,

@@ -5,14 +5,16 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 // the user's real context (points, recent scans, live market prices) so the chat is a
 // genuine context-aware agent, not a canned FAQ. Keys stay server-side.
 //
-// Provider strategy (2026-07-05): Groq primary (fast, ~1K req/day free) with automatic
-// Gemini 2.5 Flash fallback on any Groq failure. Detection stays on Gemini (better vision).
+// Provider strategy (2026-09-03): Gemini 2.5 Flash primary — a chat turn can afford its
+// latency and its answers are the better read — with Groq as the fallback for Gemini's
+// 503s. The mirror of detect-material, which needs Groq's ~1s to count a live frame.
+// (Groq retired llama-3.3-70b; gpt-oss-120b is the current fast text model there.)
 //
 // Deploy: supabase functions deploy maki-assistant --project-ref <ref>
 // Secrets: GROQ_API_KEY + GEMINI_API_KEY (Dashboard → Edge Functions → Secrets).
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_MODEL = "openai/gpt-oss-120b";
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 const GEMINI_MODEL = "gemini-2.5-flash";
 
@@ -59,8 +61,8 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const groqKey = Deno.env.get("GROQ_API_KEY")!;
-    const geminiKey = Deno.env.get("GEMINI_API_KEY")!;
+    const groqKey = Deno.env.get("GROQ_API_KEY") ?? Deno.env.get("grok_api_camera") ?? "";
+    const geminiKey = Deno.env.get("GEMINI_API_KEY") ?? "";
 
     const authHeader = req.headers.get("Authorization") ?? "";
     const userClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
@@ -94,9 +96,9 @@ Deno.serve(async (req: Request) => {
 
     const msgs = [{ role: "system", content: system }, ...messages.map((m) => ({ role: m.role, content: m.content }))];
 
-    // Groq first (speed + big free quota); Gemini catches 429s/outages transparently.
-    const reply = (await chat(GROQ_URL, groqKey, GROQ_MODEL, msgs))
-      ?? (await chat(GEMINI_URL, geminiKey, GEMINI_MODEL, msgs, { reasoning_effort: "low" }));
+    // Gemini first (better conversational answers); Groq catches its 503s transparently.
+    const reply = (geminiKey ? await chat(GEMINI_URL, geminiKey, GEMINI_MODEL, msgs, { reasoning_effort: "low" }) : null)
+      ?? (groqKey ? await chat(GROQ_URL, groqKey, GROQ_MODEL, msgs) : null);
     if (!reply) return json({ error: "assistant_failed" }, 502);
     return json({ reply });
   } catch (e) {

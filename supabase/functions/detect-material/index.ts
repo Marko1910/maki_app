@@ -12,13 +12,31 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 //   Points still SETTLE on rider pickup (settle_pickup) — a scan alone never pays.
 //
 // Deploy: supabase functions deploy detect-material --project-ref <ref>
-// Secret: GEMINI_API_KEY (Dashboard → Edge Functions → Secrets).
+// Secrets: GROQ_API_KEY + GEMINI_API_KEY (Dashboard → Edge Functions → Secrets).
 
-// Gemini via its OpenAI-compatible endpoint (drop-in swap from Groq, 2026-07-05).
-const AI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-// Primary, then the lighter sibling: 2.5-flash returns 503 "high demand" often enough
-// on the free tier to break a scan, and flash-lite has its own capacity pool.
-const MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
+// Vision providers, tried in order, each on its OpenAI-compatible endpoint.
+// Groq first: measured 1.0s per frame vs 15-25s on Gemini, which is the difference
+// between a live count and a phone that looks frozen. Gemini stays as the fallback —
+// its free tier has been answering 503 "high demand" on both flash models, and Groq's
+// free tier is capped at 8000 tokens/min (~4 frames), so between them there is usually
+// one that answers. ponytail: two keys beats one queue; add a third only if both dry up.
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+const PROVIDERS = [
+  // Each provider lists the secret names it accepts, first one set wins — the Groq key
+  // lives under `grok_api_camera` in this project's dashboard.
+  { name: "groq", url: "https://api.groq.com/openai/v1/chat/completions", model: "qwen/qwen3.8-27b", secrets: ["GROQ_API_KEY", "grok_api_camera"] },
+  { name: "gemini", url: GEMINI_URL, model: "gemini-2.5-flash", secrets: ["GEMINI_API_KEY"] },
+  { name: "gemini-lite", url: GEMINI_URL, model: "gemini-2.5-flash-lite", secrets: ["GEMINI_API_KEY"] },
+];
+
+/** The provider's key, from whichever of its secret names is set. */
+function keyOf(provider: { secrets: string[] }): string | undefined {
+  for (const name of provider.secrets) {
+    const value = Deno.env.get(name);
+    if (value) return value;
+  }
+  return undefined;
+}
 const MIN_GYRO_DPS = 8; // require real device motion during the capture window
 const MIN_SAMPLES = 5;
 const MAX_OBSERVATIONS = 60; // one scan session's worth of frames
@@ -42,7 +60,10 @@ function clamp01(n: number): number {
 /** [x0,y0,x1,y1] in 0..1 image fractions, or null when the model omitted/garbled it. */
 function normBox(raw: unknown): number[] | null {
   if (!Array.isArray(raw) || raw.length < 4) return null;
-  let [x0, y0, x1, y1] = raw.slice(0, 4).map((n) => clamp01(Number(n)));
+  const values = raw.slice(0, 4).map(Number);
+  // Qwen answers on a 0..1000 grid, Gemini in 0..1 fractions — normalise both.
+  const scale = values.some((n) => n > 1) ? 1000 : 1;
+  let [x0, y0, x1, y1] = values.map((n) => clamp01(n / scale));
   if (x1 < x0) [x0, x1] = [x1, x0];
   if (y1 < y0) [y0, y1] = [y1, y0];
   // A degenerate box would draw as a line; drop it rather than show a glitch.
@@ -75,29 +96,44 @@ async function sign(secret: string, sessionId: string, items: Counted[]): Promis
   return btoa(String.fromCharCode(...new Uint8Array(mac)));
 }
 
-/** Calls the vision model, retrying the transient capacity errors that break a scan. */
-async function callVision(aiKey: string, content: unknown[]): Promise<any> {
+// A frame is only useful while the user is still pointing at the thing. An overloaded
+// Gemini has taken 70s to answer its own 503, which reads on the phone as a frozen
+// scanner — so every provider gets a stopwatch, and the whole call a budget.
+const PROVIDER_TIMEOUT_MS = 9000;
+const VISION_BUDGET_MS = 20000;
+
+/** First provider that answers in time. Rate-limited, overloaded or slow ones are skipped. */
+async function callVision(content: unknown[]): Promise<any> {
+  const deadline = Date.now() + VISION_BUDGET_MS;
   let lastStatus = 0;
-  for (let attempt = 0; attempt < MODELS.length + 1; attempt++) {
-    const model = MODELS[Math.min(attempt, MODELS.length - 1)];
-    const resp = await fetch(AI_URL, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${aiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages: [{ role: "user", content }],
-      }),
-    });
+  for (const provider of PROVIDERS) {
+    const key = keyOf(provider);
+    const left = deadline - Date.now();
+    if (!key || left <= 0) continue;
+    let resp: Response;
+    try {
+      resp = await fetch(provider.url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: provider.model,
+          temperature: 0,
+          response_format: { type: "json_object" },
+          messages: [{ role: "user", content }],
+        }),
+        signal: AbortSignal.timeout(Math.min(PROVIDER_TIMEOUT_MS, left)),
+      });
+    } catch (e) {
+      console.error("vision_timeout", provider.name, String(e));
+      lastStatus = 504;
+      continue;
+    }
     if (resp.ok) return await resp.json();
     lastStatus = resp.status;
-    const detail = (await resp.text().catch(() => "")).slice(0, 300);
-    console.error("vision_attempt", model, lastStatus, detail);
-    // 503 high demand / 429 rate limit / 5xx are worth another shot on the next model;
-    // a 400/401 is our bug or a bad key and will fail identically every time.
+    console.error("vision_attempt", provider.name, lastStatus, (await resp.text().catch(() => "")).slice(0, 200));
+    // 429 rate limit / 503 high demand / 5xx: the next provider may well answer.
+    // A 400/401 is our bug or a bad key and would fail the same way everywhere.
     if (lastStatus !== 429 && lastStatus !== 503 && lastStatus < 500) break;
-    await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
   }
   throw new Error(`vision_failed_${lastStatus}`);
 }
@@ -116,10 +152,11 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const aiKey = Deno.env.get("GEMINI_API_KEY") ?? "";
     // A missing secret used to surface as a generic "check your connection" on the
     // phone and cost days of debugging; say it out loud instead.
-    if (!aiKey) return json({ error: "server_misconfig", detail: "GEMINI_API_KEY no esta configurada en los secrets" }, 500);
+    if (!PROVIDERS.some(keyOf)) {
+      return json({ error: "server_misconfig", detail: "Falta la clave de vision (GROQ_API_KEY/grok_api_camera o GEMINI_API_KEY) en los secrets" }, 500);
+    }
 
     const authHeader = req.headers.get("Authorization") ?? "";
     const userClient = createClient(supabaseUrl, anonKey, {
@@ -188,7 +225,7 @@ Deno.serve(async (req: Request) => {
       const { data: det, error: derr } = await admin.from("detections").insert({
         generator_id: user.id,
         status: "pending",
-        model_version: MODELS[0],
+        model_version: PROVIDERS[0].model,
         total_points: totalPoints,
         total_value: totalValue,
         streak_multiplier: Number(gp?.streak_multiplier ?? 1),
@@ -241,11 +278,12 @@ Deno.serve(async (req: Request) => {
     ];
     let aiJson: any;
     try {
-      aiJson = await callVision(aiKey, content);
+      aiJson = await callVision(content);
     } catch (_e) {
       // A busy model is a retryable hiccup, not a failed scan: the camera stays open
       // and the next frame tries again, so this must not read as an error to the user.
-      return json({ rejected: "busy", message: "El detector esta saturado. Sigue apuntando, reintentando…" });
+      // retry_after tells the app to slow down instead of burning the same quota again.
+      return json({ rejected: "busy", retry_after_ms: 12000, message: "El detector esta ocupado. Sigue apuntando, reintentando…" });
     }
     let parsed: any = {};
     try { parsed = JSON.parse(aiJson?.choices?.[0]?.message?.content ?? "{}"); } catch { parsed = {}; }

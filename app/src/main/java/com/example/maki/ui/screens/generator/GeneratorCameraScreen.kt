@@ -94,6 +94,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.UUID
+import kotlin.math.abs
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 
@@ -101,8 +102,9 @@ private val DetectGreen = Color(0xFF34D399)
 private val DetectAmber = Color(0xFFFBBF24)
 private val Ink = Color(0xFF0B0F0D)
 
-/** Pause between analysed frames — slow enough to stay inside the model's free-tier rate. */
-private const val FRAME_INTERVAL_MS = 1200L
+/** Pause between analysed frames. The free vision tiers meter every call, so this is
+ *  the floor; the server raises it via retry_after_ms when a provider is rate-limited. */
+private const val FRAME_INTERVAL_MS = 2500L
 
 /**
  * Live counting scanner. The camera stays open: every ~2s a frame goes to the
@@ -160,22 +162,32 @@ fun GeneratorCameraScreen(
         val source = grabber
         if (!hasPermission || source == null || closing || showCoach || inspection) return@LaunchedEffect
         val sensors = LivenessSensors(context).apply { start() }
+        var lastScene: IntArray? = null
+        var wait = FRAME_INTERVAL_MS
         try {
             while (isActive) {
                 val bitmap = source.grab()
-                if (bitmap == null) { delay(FRAME_INTERVAL_MS); continue }
+                if (bitmap == null) { delay(wait); continue }
                 lastFrame = bitmap
+
+                // Pointing at the same thing as a second ago has nothing new to count, and
+                // the free vision tiers are metered per call — don't spend one on a repeat.
+                val scene = withContext(Dispatchers.Default) { sceneSignature(bitmap) }
+                if (tally.isNotEmpty() && !sceneChanged(lastScene, scene)) { delay(800); continue }
+                lastScene = scene
+
                 analyzing = true
                 val result = runCatching {
-                    val encoded = withContext(Dispatchers.IO) { ImageEncoder.toBase64(bitmap, quality = 70) }
+                    val encoded = withContext(Dispatchers.IO) {
+                        ImageEncoder.toBase64(ImageEncoder.scaled(bitmap), quality = 70)
+                    }
                     MakiRepository.previewFrame(sessionId, encoded, sensors.snapshot())
                 }.getOrElse { e ->
-                    analyzing = false
                     hint = e.message?.takeIf { it.isNotBlank() } ?: "Sin conexión con el detector."
-                    delay(2000)
                     null
                 }
                 analyzing = false
+                wait = result?.retry_after_ms ?: FRAME_INTERVAL_MS
                 if (result != null) {
                     hint = when {
                         result.rejected != null -> result.message ?: "Sigue apuntando a tus residuos."
@@ -189,9 +201,13 @@ fun GeneratorCameraScreen(
                             "${tally.sumOf { it.quantity }} materiales contados"
                         }
                     }
-                    if (result.rejected != null) boxes = emptyList()
+                    if (result.rejected != null) {
+                        boxes = emptyList()
+                        // A rejected frame taught us nothing; let the next one be re-read.
+                        lastScene = null
+                    }
                 }
-                delay(FRAME_INTERVAL_MS)
+                delay(wait)
             }
         } finally {
             sensors.stop()
@@ -295,6 +311,27 @@ fun GeneratorCameraScreen(
             })
         }
     }
+}
+
+/**
+ * Coarse fingerprint of what the camera is looking at: mean brightness over a 12x12 grid.
+ * ponytail: cheap stand-in for "the user moved to something else" — swap for real motion
+ * tracking only if it starts missing slow pans.
+ */
+private fun sceneSignature(bitmap: Bitmap): IntArray {
+    val small = Bitmap.createScaledBitmap(bitmap, 12, 12, true)
+    return IntArray(144) { i ->
+        val px = small.getPixel(i % 12, i / 12)
+        ((px shr 16 and 0xFF) + (px shr 8 and 0xFF) + (px and 0xFF)) / 3
+    }
+}
+
+/** True when the view moved enough to be worth another call to the detector. */
+private fun sceneChanged(previous: IntArray?, current: IntArray, threshold: Int = 6): Boolean {
+    if (previous == null || previous.size != current.size) return true
+    var total = 0
+    for (i in current.indices) total += abs(current[i] - previous[i])
+    return total / current.size >= threshold
 }
 
 /**

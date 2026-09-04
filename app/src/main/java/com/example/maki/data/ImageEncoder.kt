@@ -39,6 +39,13 @@ object ImageEncoder {
     fun downscaledBase64(photo: File, maxDim: Int = 1024, quality: Int = 80): String =
         toBase64(decodeOriented(photo, maxDim) ?: error("not an image"), quality)
 
+    /** Shrinks to [maxDim] on the long side — a scan frame doesn't need megapixels on mobile data. */
+    fun scaled(bitmap: Bitmap, maxDim: Int = 640): Bitmap {
+        val scale = maxDim.toFloat() / maxOf(bitmap.width, bitmap.height)
+        if (scale >= 1f) return bitmap
+        return Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true)
+    }
+
     /** Live analysis frames arrive in sensor orientation; [degrees] comes from the ImageProxy. */
     fun upright(bitmap: Bitmap, degrees: Int): Bitmap {
         if (degrees % 360 == 0) return bitmap
