@@ -39,6 +39,19 @@ object ImageEncoder {
     fun downscaledBase64(photo: File, maxDim: Int = 1024, quality: Int = 80): String =
         toBase64(decodeOriented(photo, maxDim) ?: error("not an image"), quality)
 
+    /** Live analysis frames arrive in sensor orientation; [degrees] comes from the ImageProxy. */
+    fun upright(bitmap: Bitmap, degrees: Int): Bitmap {
+        if (degrees % 360 == 0) return bitmap
+        val m = Matrix().apply { postRotate(degrees.toFloat()) }
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, m, true)
+    }
+
+    /** Writes [bitmap] as JPEG — used to keep a verified frame as a YOLO training sample. */
+    fun writeJpeg(bitmap: Bitmap, dest: File, quality: Int = 85): File {
+        dest.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, quality, it) }
+        return dest
+    }
+
     private fun rotateToUpright(bitmap: Bitmap, photo: File): Bitmap {
         val degrees = runCatching {
             when (ExifInterface(photo.absolutePath).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {

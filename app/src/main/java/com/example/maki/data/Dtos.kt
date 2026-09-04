@@ -355,8 +355,26 @@ data class RiderLocationPatch(
 @Serializable
 data class MotionDto(val maxGyroDps: Double, val samples: Int, val windowMs: Long)
 
+/** What the server counted in one frame, signed by it — the client only relays it back. */
 @Serializable
-data class DetectRequest(val frames: List<String>, val motion: MotionDto)
+data class ScanObsItemDto(val code: String, val quantity: Int, val quality: Double)
+
+@Serializable
+data class ScanObservationDto(val items: List<ScanObsItemDto>, val token: String)
+
+/**
+ * One call to detect-material. `preview` scores a frame of the live scan (nothing is
+ * saved); `commit` closes the session and persists the detection from the signed
+ * observations gathered along the way.
+ */
+@Serializable
+data class DetectRequest(
+    val session_id: String,
+    val mode: String,
+    val frames: List<String> = emptyList(),
+    val motion: MotionDto? = null,
+    val observations: List<ScanObservationDto> = emptyList(),
+)
 
 @Serializable
 data class DetectedItemDto(
@@ -383,7 +401,9 @@ data class DetectResultDto(
     val total_points: Int = 0,
     val total_value: Double = 0.0,
     val items: List<DetectedItemDto> = emptyList(),
-    val rejected: String? = null,   // "liveness" | "spoof" | "no_material"
+    /** Preview only: the server's signature over this frame's count. */
+    val token: String? = null,
+    val rejected: String? = null,   // "liveness" | "spoof" | "no_material" | "busy"
     val message: String? = null,
     val error: String? = null,
 )

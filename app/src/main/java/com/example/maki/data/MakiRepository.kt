@@ -267,13 +267,24 @@ object MakiRepository {
     // ---- AI scan ----
 
     /**
-     * Runs a captured scan through the server-authoritative detect-material function.
-     * The server hides the vision key, runs the anti-spoof checks, computes points and
-     * is the only writer of `detections` — so the result here is already persisted
-     * (status 'pending') unless [DetectResultDto.rejected] is set.
+     * Scores one frame of the live scan. Nothing is saved: the server returns what it
+     * saw plus a signature over that count ([DetectResultDto.token]), which
+     * [commitScan] replays. [DetectResultDto.rejected] carries the anti-spoof and
+     * "nothing here" outcomes — the camera stays open through all of them.
      */
-    suspend fun detectMaterial(frames: List<String>, motion: MotionDto): DetectResultDto {
-        val body = MakiApi.json.encodeToString(DetectRequest.serializer(), DetectRequest(frames, motion))
+    suspend fun previewFrame(sessionId: String, frame: String, motion: MotionDto): DetectResultDto =
+        callDetect(DetectRequest(sessionId, "preview", listOf(frame), motion))
+
+    /**
+     * Closes the scan: the server re-checks its own signatures, takes the best count per
+     * material across the session and is the only writer of `detections` — so the result
+     * is already persisted (status 'pending') unless [DetectResultDto.rejected] is set.
+     */
+    suspend fun commitScan(sessionId: String, observations: List<ScanObservationDto>): DetectResultDto =
+        callDetect(DetectRequest(sessionId, "commit", observations = observations))
+
+    private suspend fun callDetect(request: DetectRequest): DetectResultDto {
+        val body = MakiApi.json.encodeToString(DetectRequest.serializer(), request)
         val raw = MakiApi.callFunction("detect-material", body)
         return MakiApi.json.decodeFromString(DetectResultDto.serializer(), raw)
     }
