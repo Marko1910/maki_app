@@ -20,6 +20,7 @@ import com.example.maki.data.PickupItemDto
 import com.example.maki.data.RedemptionDto
 import com.example.maki.data.RedemptionOptionDto
 import com.example.maki.data.RoutePlanner
+import com.example.maki.data.StreetRouter
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -27,20 +28,41 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-/** UI state for the generator (Eco-Hero) home + profile header. */
+/**
+ * UI state for the generator (Eco-Hero) home + profile header. Neutral until the
+ * profile loads: these used to be a sample family ("Fam. Nureña", 4,250 pts) that
+ * any other account saw as its own while the network was slow or the load failed.
+ */
 data class GeneratorUiState(
-    val displayName: String = "Fam. Nureña",
-    val initials: String = "FN",
-    val points: Int = 4250,
-    val streakDays: Int = 21,
-    val cashEarned: String = "S/12.50",
-    val co2: String = "12.4 kg",
-    val recycled: String = "48 kg",
-    val water: String = "3.2 m³",
-    val moneyValue: String = "S/4.25",
+    val displayName: String = "",
+    val initials: String = "",
+    val points: Int = 0,
+    val streakDays: Int = 0,
+    val cashEarned: String = "S/0.00",
+    val co2: String = "0.0 kg",
+    val recycled: String = "0 kg",
+    val water: String = "0.0 m³",
+    val moneyValue: String = "S/0.00",
+    /** Booked on pickup, spendable once the acopio weighs it (settle_delivery). */
+    val pendingPoints: Int = 0,
 )
 
 // ---- Per-screen UI models ----
+
+/**
+ * The live half of the home screen: the pickup in flight (if any), the block rank
+ * and the active reto. Neutral until loaded — these used to be hard-coded ("A 3
+ * cuadras", "#2", "53%") and showed a rider coming to families who had asked for none.
+ */
+data class HomeExtrasUi(
+    /** Null when nothing is in flight: the "Eco-Rider en camino" card hides. */
+    val activeTitle: String? = null,
+    val activeLine: String = "",
+    val nextPickup: String = "Sin programar",
+    val blockRank: String = "—",
+    val challengePct: Int = 0,
+    val challengeName: String = "Sin reto activo",
+)
 
 data class WalletUi(
     val balancePoints: Int,
@@ -52,6 +74,10 @@ data class WalletUi(
 )
 data class RedeemOptionUi(
     val kind: String,
+    /** Catalogue code ("MUNI_ARBITRIOS"…): what the wallet styles the card by. */
+    val code: String = "",
+    /** Who honours it ("Municipalidad"), shown as a partner badge. */
+    val partner: String = "",
     val title: String,
     val rule: String,
     val suggested: Boolean,
@@ -64,6 +90,8 @@ data class RedeemHistoryUi(val title: String, val date: String, val amount: Stri
 
 data class RankingsUi(
     val boardTitle: String,
+    /** "Semanal · 12 Oct - 18 Oct": which board this actually is. */
+    val periodLabel: String = "",
     val entries: List<RankEntryUi>,
     val rewards: List<RewardUi>,
 )
@@ -91,14 +119,21 @@ data class TrackingUi(
     val etaText: String,
     val itemsText: String,
     val statusMessage: String,
+    /** Null = the family has no pickup at all (the screen shows an empty state). */
     val pickupId: String? = null,
-    val canComplete: Boolean = false,
+    /** The family may call it off until the rider reaches the door (the DB enforces it too). */
+    val canCancel: Boolean = false,
+    val riderPhone: String? = null,
     // Live map: where the family is, where the rider is right now, and how far.
     val homeLat: Double? = null,
     val homeLng: Double? = null,
     val riderLat: Double? = null,
     val riderLng: Double? = null,
     val distanceText: String? = null,
+    /** Street path from the rider to the door, when the router answered. */
+    val path: List<RoutePlanner.LatLng> = emptyList(),
+    /** Set when the rider's last reported position is old enough to mislead. */
+    val staleText: String? = null,
 ) {
     val hasMap: Boolean get() = homeLat != null && homeLng != null
 }
@@ -111,7 +146,26 @@ data class CenterUi(
     val lat: Double?,
     val lng: Double?,
     val phone: String?,
+    /** From the family's home, when both have coordinates. */
+    val km: Double? = null,
 )
+
+/**
+ * One row of "Precios de hoy": what the acopio pays per kilo, and what that kilo
+ * leaves in your wallet as Eco-Puntos.
+ */
+data class PriceRowUi(
+    val code: String,
+    val name: String,
+    val pricePerKg: String,
+    val pointsPerKg: String,
+    val yours: String,
+    val changePct: String? = null,
+    val rising: Boolean = true,
+)
+
+/** Eco-Puntos per sol: the Yape/Plin option in `redemption_options` (1 000 pts = S/1.00). */
+const val POINTS_PER_SOL = 1000.0
 
 data class HistoryUi(val sections: List<HistorySectionUi>)
 data class HistorySectionUi(val label: String, val entries: List<HistoryEntryUi>)
@@ -121,9 +175,11 @@ data class HistoryEntryUi(
     val title: String,
     val meta: String,            // "+92 pts · S/0.34" or redeem date
     val statusText: String?,
-    val statusKind: String?,     // "done" | "assigned" | null
+    val statusKind: String?,     // "done" | "assigned" | "cancelled" | null
     val note: String?,
     val amount: String?,
+    /** Set on pickup rows; an in-flight one opens the live tracking map. */
+    val pickupId: String? = null,
 )
 
 data class NotifUi(
@@ -134,6 +190,8 @@ data class NotifUi(
     val unread: Boolean,
     val highlighted: Boolean,
     val id: Long = 0,
+    /** About a pickup: tapping it opens the live map. */
+    val aboutPickup: Boolean = false,
 )
 
 data class ChallengeUi(
@@ -162,6 +220,8 @@ data class DetectedItemUi(
     val note: String?,
     /** What the AI counted, kept so the user can see what they are correcting. */
     val detectedQty: Int = 0,
+    /** Units per brand read on the labels, for the rows on the result; empty when none was legible. */
+    val brandRows: Map<String, Int> = emptyMap(),
 )
 
 /** The Eco-Rider dispatch just confirmed for a pickup. */
@@ -176,6 +236,8 @@ class GeneratorViewModel : ViewModel() {
     var error by mutableStateOf<String?>(null)
         private set
 
+    var home by mutableStateOf(HomeExtrasUi())
+        private set
     var wallet by mutableStateOf<WalletUi?>(null)
         private set
     var rankings by mutableStateOf<RankingsUi?>(null)
@@ -192,6 +254,10 @@ class GeneratorViewModel : ViewModel() {
     var lastDetection by mutableStateOf<DetectionResultUi?>(null)
         private set
     /** Live market prices per material (drives the result card + price alerts). */
+    /** Today's market price per material next to the points it pays. */
+    var priceRows by mutableStateOf<List<PriceRowUi>>(emptyList())
+        private set
+
     var prices by mutableStateOf<List<MaterialPriceDto>>(emptyList())
         private set
     /** Collection centers for the acopio map. */
@@ -212,6 +278,10 @@ class GeneratorViewModel : ViewModel() {
     var detectedQty by mutableStateOf<Map<String, Int>>(emptyMap())
         private set
 
+    /** Units per brand per material code, as corrected on the result; the sum is [detectedQty]. */
+    var detectedBrands by mutableStateOf<Map<String, Map<String, Int>>>(emptyMap())
+        private set
+
     /** Who is coming and in how long, after a confirmed pickup — drives the dispatch dialog. */
     var dispatch by mutableStateOf<DispatchUi?>(null)
         private set
@@ -223,10 +293,12 @@ class GeneratorViewModel : ViewModel() {
     var busy by mutableStateOf(false)
         private set
     /** Whether the user has any unread notifications (drives the home bell dot). */
-    var hasUnread by mutableStateOf(true)
+    var hasUnread by mutableStateOf(false)
         private set
 
     fun consumeMessage() { message = null }
+    /** The Root shows the load failure once, then clears it. */
+    fun consumeError() { error = null }
     /** Surfaces a UI-originated info message in the shared snackbar. */
     fun notify(text: String) { message = text }
 
@@ -268,6 +340,33 @@ class GeneratorViewModel : ViewModel() {
         }
     }
 
+    /**
+     * The home screen's live data. Re-read every time Home shows: it is how the
+     * family learns a rider was assigned, arrived, or finished while they were away.
+     */
+    fun loadHome() = load {
+        MakiRepository.loadGeneratorProfile()?.let { state = it.toUiState() }
+        val active = MakiRepository.loadTrackedPickup()?.takeIf { it.status in ACTIVE }
+        runCatching { hasUnread = MakiRepository.loadNotifications().any { !it.is_read } }
+        val me = MakiApi.session?.userId
+        val rank = runCatching {
+            MakiRepository.loadOpenPeriod()?.let { p -> MakiRepository.loadLeaderboardEntries(p.id) }
+                ?.firstOrNull { it.user_id == me }?.rank
+        }.getOrNull()
+        val retos = runCatching { MakiRepository.loadChallenges().map { it.toUi() } }.getOrDefault(emptyList())
+        val reto = retos.firstOrNull { !it.completed } ?: retos.firstOrNull()
+        home = HomeExtrasUi(
+            activeTitle = active?.let { homeActiveTitle(it.status, it.rider?.display_name) },
+            // No ETA here: eta_minutes is frozen at dispatch time and disagreed with
+            // the live one on the map ("~3 min" here, "~1 min" there). The map is one tap away.
+            activeLine = active?.let { "${itemsSummary(it.pickup_items)} · Toca para verlo en el mapa" }.orEmpty(),
+            nextPickup = active?.window_label ?: "Sin programar",
+            blockRank = rank?.let { "#$it" } ?: "—",
+            challengePct = reto?.let { (it.progress * 100).toInt() } ?: 0,
+            challengeName = reto?.title?.removePrefix("Reto: ") ?: "Sin reto activo",
+        )
+    }
+
     fun loadWallet() = load {
         if (wallet != null) return@load
         fetchWallet()
@@ -288,6 +387,16 @@ class GeneratorViewModel : ViewModel() {
         val topPoints = entries.firstOrNull()?.points ?: 0
         rankings = RankingsUi(
             boardTitle = period.block_label?.let { "Jr. $it" } ?: "Mi Ranking",
+            periodLabel = listOfNotNull(
+                when (period.period_type) {
+                    "weekly" -> "Semanal"
+                    "monthly" -> "Mensual"
+                    else -> period.period_type.replaceFirstChar { it.uppercase() }
+                }.takeIf { it.isNotBlank() },
+                listOfNotNull(period.period_start, period.period_end)
+                    .takeIf { it.size == 2 }
+                    ?.let { "${MakiTime.dayMonth(it[0])} - ${MakiTime.dayMonth(it[1])}" },
+            ).joinToString(" · "),
             entries = entries.map { it.toUi(me, topPoints) },
             rewards = rewards.map { RewardUi(it.rank, it.description ?: "x${trimNum(it.reward_multiplier)} puntos") },
         )
@@ -324,10 +433,19 @@ class GeneratorViewModel : ViewModel() {
         )
     }
 
-    fun loadTracking() = load {
-        if (tracking != null) return@load
-        fetchTracking()
+    /**
+     * Which pickup the tracking map is following. Null means "whichever is active
+     * now", the right answer coming from Home or straight after asking for one;
+     * a history row sets its own id so the map — and Cancelar — stay on it.
+     */
+    private var trackedId by mutableStateOf<String?>(null)
+
+    fun trackPickup(pickupId: String?) {
+        if (pickupId != trackedId) { trackedId = pickupId; tracking = null }
     }
+
+    /** Always re-reads: the screen is the entry point to "where is my rider now". */
+    fun loadTracking() = load { fetchTracking() }
 
     /**
      * Re-reads the pickup and the rider's current position. Called on a timer while
@@ -343,44 +461,105 @@ class GeneratorViewModel : ViewModel() {
         }
     }
 
+    // Last street path, so the 10 s poll only asks the router again once the rider moved.
+    private var road: StreetRouter.Route? = null
+    private var roadFrom: RoutePlanner.LatLng? = null
+    private var roadPickupId: String? = null
+
     private suspend fun fetchTracking() {
-        val pickup = MakiRepository.loadLatestPickup() ?: return
-        val rider = pickup.rider_id?.let { MakiRepository.loadRiderProfile(it) }
+        val want = trackedId
+        val pickup = MakiRepository.loadTrackedPickup(want)
+        // Opened another pickup while this read was in flight: its answer is stale and
+        // publishing it would point the map — and Cancelar — at the pickup left behind.
+        if (want != trackedId) return
+        if (pickup == null) { tracking = NoPickupTracking; return }
+
+        val live = pickup.status in LIVE
+        val rider = pickup.rider_id?.let { runCatching { MakiRepository.loadRiderProfile(it) }.getOrNull() }
         val riderName = pickup.rider?.display_name ?: "Eco-Rider"
-        val vehicle = vehicleLabel(rider?.vehicle_type)
         val ratingTxt = rider?.rating?.let { " · ★ ${"%.1f".format(Locale.US, it)}" } ?: ""
 
-        val home = (pickup.latitude to pickup.longitude)
-            .takeIf { it.first != null && it.second != null }
-            ?: (pickup.address?.latitude to pickup.address?.longitude)
-        val riderPos = pickup.rider_id
-            ?.takeIf { pickup.status !in setOf("completed", "cancelled") }
+        val home = latLngOf(pickup.latitude ?: pickup.address?.latitude, pickup.longitude ?: pickup.address?.longitude)
+        val riderPos = pickup.rider_id?.takeIf { live }
             ?.let { runCatching { MakiRepository.loadRiderPosition(it) }.getOrNull() }
+        val riderAt = latLngOf(riderPos?.current_latitude, riderPos?.current_longitude)
 
-        // Straight-line distance is honest here: it says "3 cuadras", not a route.
-        val km = if (home.first != null && riderPos?.current_latitude != null) {
-            RoutePlanner.distanceKm(
-                RoutePlanner.LatLng(home.first!!, home.second!!),
-                RoutePlanner.LatLng(riderPos.current_latitude, riderPos.current_longitude ?: 0.0),
-            )
+        // Road distance/time when the router answers; the straight line otherwise.
+        val approaching = live && pickup.status != "collecting"
+        val street = if (approaching && home != null && riderAt != null) {
+            streetRoute(pickup.id, riderAt, home, rider?.vehicle_type)
         } else null
-        val liveEta = km?.let { RoutePlanner.etaMinutes(it) }
-        val eta = liveEta ?: pickup.eta_minutes
+        val km = street?.distanceKm ?: if (home != null && riderAt != null) RoutePlanner.distanceKm(riderAt, home) else null
+        val eta = street?.minutes ?: km?.let { RoutePlanner.etaMinutes(it) } ?: pickup.eta_minutes
+        val ageMin = riderPos?.last_location_at?.let { MakiTime.millis(it) }
+            ?.let { (System.currentTimeMillis() - it) / 60_000 }
+        // 15 min without a heartbeat (it beats every 15 s) is the rider's app closed:
+        // "~1 min" off a 3-hour-old position was a promise nobody could keep.
+        val signalLost = approaching && ageMin != null && ageMin >= 15
 
         tracking = TrackingUi(
             headerTitle = trackingHeader(pickup.status),
-            riderLine = "$riderName · $vehicle$ratingTxt",
-            etaText = if (eta != null && eta > 0) "~$eta min" else (pickup.window_label ?: "En camino"),
+            riderLine = if (pickup.rider_id == null) "Asignando al Eco-Rider más cercano"
+            else "$riderName · ${vehicleLabel(rider?.vehicle_type)}$ratingTxt",
+            etaText = when {
+                // A closed pickup showing its time window read as "still to come".
+                pickup.status == "completed" -> "Completado"
+                pickup.status == "cancelled" || pickup.status == "failed" -> "Cancelado"
+                !live -> pickup.window_label.orEmpty()
+                pickup.status == "collecting" -> "En tu puerta"
+                signalLost -> ""
+                eta != null && eta > 0 -> "~$eta min"
+                else -> pickup.window_label ?: "En camino"
+            },
             itemsText = itemsSummary(pickup.pickup_items),
-            statusMessage = trackingMessage(pickup.status, riderName),
+            statusMessage = if (signalLost) {
+                "$riderName no está compartiendo su ubicación ahora. Lo verás moverse apenas abra su app."
+            } else trackingMessage(pickup.status, riderName),
             pickupId = pickup.id,
-            canComplete = pickup.status !in setOf("completed", "cancelled"),
-            homeLat = home.first,
-            homeLng = home.second,
-            riderLat = riderPos?.current_latitude,
-            riderLng = riderPos?.current_longitude,
-            distanceText = km?.let { "A ${RoutePlanner.distanceLabel(it)}" },
+            canCancel = pickup.status in CANCELLABLE,
+            riderPhone = pickup.rider?.phone?.takeIf { live && it.isNotBlank() },
+            homeLat = home?.lat,
+            homeLng = home?.lng,
+            riderLat = riderAt?.lat,
+            riderLng = riderAt?.lng,
+            distanceText = km?.takeIf { approaching }?.let { "A ${RoutePlanner.distanceLabel(it)}" },
+            path = street?.path.orEmpty(),
+            staleText = ageMin?.takeIf { approaching && it >= STALE_MINUTES }
+                ?.let { "Ubicación de hace " + if (it < 60) "$it min" else "${it / 60} h" },
         )
+    }
+
+    /** Re-asks the router only when the rider moved [REROUTE_KM]; the poll runs every 10 s. */
+    private suspend fun streetRoute(
+        pickupId: String?,
+        from: RoutePlanner.LatLng,
+        to: RoutePlanner.LatLng,
+        vehicle: String?,
+    ): StreetRouter.Route? {
+        val last = roadFrom
+        if (pickupId == roadPickupId && last != null && RoutePlanner.distanceKm(last, from) < REROUTE_KM) return road
+        return StreetRouter.route(listOf(from, to), vehicle)
+            ?.also { road = it; roadFrom = from; roadPickupId = pickupId }
+    }
+
+    /** Calls off the pickup being tracked; the rider (if any) is notified by the DB. */
+    fun cancelActivePickup() {
+        val id = tracking?.pickupId
+        if (id == null) {
+            // Antes esto era `?: return`: el boton no hacia nada y no decia nada.
+            message = "No hay un recojo que cancelar."
+            return
+        }
+        runAction(success = "Recojo cancelado.") {
+            MakiRepository.cancelPickup(id)
+            history = null
+            // Fijar el recojo cancelado. Sin esto la siguiente lectura devuelve el
+            // activo mas reciente, que con dos recojos en vuelo es OTRO: la pantalla
+            // volvia a pintar "Buscando un Eco-Rider" y parecia que no se habia
+            // cancelado nada.
+            trackedId = id
+            fetchTracking()
+        }
     }
 
     /** Saves the primary address (creating it on first use) and refreshes the form. */
@@ -399,20 +578,47 @@ class GeneratorViewModel : ViewModel() {
         challenge = all.firstOrNull { !it.completed } ?: all.firstOrNull()
     }
 
-    fun loadCenters() = load {
-        if (centers != null) return@load
-        centers = MakiRepository.loadCenters().map { it.toUi() }
+    /**
+     * Nearest first, measured from where the phone is — else from the family's home
+     * ("cerca" used to list Lima before Cartavio).
+     */
+    fun loadCenters(here: RoutePlanner.LatLng? = null) = load {
+        if (centers != null && here == null) return@load
+        val home = here ?: MakiRepository.loadPrimaryAddress()?.let { latLngOf(it.latitude, it.longitude) }
+        centers = MakiRepository.loadCenters()
+            .map { c -> c.toUi(km = home?.let { h -> latLngOf(c.latitude, c.longitude)?.let { RoutePlanner.distanceKm(h, it) } }) }
+            .sortedBy { it.km ?: Double.MAX_VALUE }
+        // What the market pays per kilo next to what that kilo leaves in your wallet:
+        // the two numbers the family actually compares before separating a bag.
+        val materials = runCatching { MakiRepository.loadMaterials() }.getOrDefault(emptyList())
+        val quotes = runCatching { MakiRepository.loadPrices() }.getOrDefault(prices).also { prices = it }
+        priceRows = materials.mapNotNull { m ->
+            val quote = quotes.firstOrNull { it.code == m.code }
+            val pts = m.points_per_kg.takeIf { it > 0 } ?: return@mapNotNull null
+            PriceRowUi(
+                code = m.code,
+                name = m.name,
+                pricePerKg = quote?.price_per_kg?.takeIf { it > 0 }
+                    ?.let { "S/%.2f/kg".format(Locale.US, it) } ?: "Sin precio",
+                pointsPerKg = "${groupInt(pts.toInt())} pts/kg",
+                yours = "≈ S/%.2f para ti".format(Locale.US, pts / POINTS_PER_SOL),
+                changePct = quote?.pct_change?.takeIf { kotlin.math.abs(it) >= 0.1 }
+                    ?.let { "${if (it > 0) "+" else ""}${"%.0f".format(Locale.US, it)}%" },
+                rising = (quote?.pct_change ?: 0.0) >= 0,
+            )
+        }
     }
 
+    /** Always re-read: the rider moves pickups along while the family is elsewhere in the app. */
     fun loadHistory() = load {
-        if (history != null) return@load
         val detections = MakiRepository.loadDetections()
         val redemptions = MakiRepository.loadRedemptions()
-        history = buildHistory(detections, redemptions)
+        val pickups = runCatching { MakiRepository.loadPickups() }.getOrDefault(emptyList())
+        history = buildHistory(detections, redemptions, pickups)
     }
 
+    /** Always re-read: the DB triggers post new notices at any time; the cache hid them. */
     fun loadNotifications() = load {
-        if (notifications != null) return@load
         val list = MakiRepository.loadNotifications()
         notifications = list.mapIndexed { i, n -> n.toUi(highlighted = i == 0 && !n.is_read) }
         hasUnread = list.any { !it.is_read }
@@ -453,20 +659,35 @@ class GeneratorViewModel : ViewModel() {
         }
     }
 
-    /** Creates a pickup request with the selected items, then invokes [onDone] (navigate). */
     /**
      * Creates the pickup, then dispatches it to the nearest available Eco-Rider —
      * the taxi-app move: the family asks once and someone is already on the way,
      * instead of the request sitting on a board. [onDone] navigates to tracking.
      */
+    /**
+     * Where the phone is while the pickup form is open — the rider comes here. The
+     * typed address often had no coordinates, so dispatch could not measure anything.
+     */
+    var pickupHere by mutableStateOf<RoutePlanner.LatLng?>(null)
+        private set
+    /** Street name for [pickupHere] (reverse geocoded), or null when there is no geocoder. */
+    var pickupHereLabel by mutableStateOf<String?>(null)
+        private set
+
+    fun setPickupLocation(at: RoutePlanner.LatLng?, label: String?) {
+        pickupHere = at
+        pickupHereLabel = label
+    }
+
     fun createPickup(selections: List<Pair<String, Int>>, windowLabel: String, onDone: () -> Unit) {
         if (selections.none { it.second > 0 }) { message = "Agrega al menos un material al recojo."; return }
         val form = pickupForm
         val detId = lastDetectionId
+        val here = pickupHere
         runAction(success = "¡Recojo solicitado!", onSuccess = onDone) {
             val pickupId = if (detId != null) {
                 // Loop: link the verified detection so its points settle on collection.
-                val id = MakiRepository.createPickupFromDetection(form?.addressId, scheduledDateFor(windowLabel), windowLabel)
+                val id = MakiRepository.createPickupFromDetection(form?.addressId, scheduledDateFor(windowLabel), windowLabel, here)
                 lastDetectionId = null
                 // The RPC copies the AI's counts; re-state what the user actually has.
                 if (id != null) runCatching { MakiRepository.updateReportedQuantities(id, selections) }
@@ -477,6 +698,7 @@ class GeneratorViewModel : ViewModel() {
                     scheduledDate = scheduledDateFor(windowLabel),
                     windowLabel = windowLabel,
                     items = selections,
+                    at = here,
                 )
             }
             // Dispatch must never sink the request: if it fails, the pickup still
@@ -490,17 +712,6 @@ class GeneratorViewModel : ViewModel() {
             tracking = null  // invalidate caches so Tracking/History reload the new pickup
             history = null
             detectedQty = emptyMap()
-        }
-    }
-
-    /** Confirms the active pickup as collected → settle_pickup credits the points. */
-    fun completeActivePickup() {
-        val id = tracking?.pickupId ?: run { message = "No hay un recojo activo."; return }
-        runAction(success = "¡Recojo confirmado! Tus Eco-Puntos fueron acreditados.") {
-            MakiRepository.completePickup(id)
-            tracking = null   // reload so it shows completed
-            history = null
-            MakiRepository.loadGeneratorProfile()?.let { state = it.toUiState() }  // points just credited
         }
     }
 
@@ -530,6 +741,7 @@ class GeneratorViewModel : ViewModel() {
         lastDetection = result.toUi(state.streakDays, prices)
         lastDetectionId = result.detection_id   // "pedir recojo" will link this detection
         detectedQty = result.items.associate { it.code to it.quantity }
+        detectedBrands = result.items.associate { it.code to brandRows(it.brands, it.quantity) }
         pickupForm = null   // the new detection seeds the pickup form…
         history = null      // …and appears in history
     }
@@ -543,6 +755,18 @@ class GeneratorViewModel : ViewModel() {
         pickupForm = null   // the form must pick the corrected count up
     }
 
+    /** Corrects one brand's count on the result; the material's declared total follows. */
+    fun adjustBrandQty(code: String, brand: String, delta: Int) {
+        val rows = detectedBrands[code] ?: return
+        val current = rows[brand] ?: return
+        val next = (current + delta).coerceIn(0, 999)
+        if (next == current) return
+        val corrected = rows + (brand to next)
+        detectedBrands = detectedBrands + (code to corrected)
+        detectedQty = detectedQty + (code to corrected.values.sum())
+        pickupForm = null   // the form must pick the corrected count up
+    }
+
     /** Dismisses the "un Eco-Rider va en camino" dialog. */
     fun consumeDispatch() { dispatch = null }
 
@@ -551,6 +775,28 @@ class GeneratorViewModel : ViewModel() {
         MakiRepository.signOut()
     }
 }
+
+/** Pickup states that are still happening. */
+private val ACTIVE = MakiRepository.ACTIVE_STATUSES.split(",").toSet()
+/** A rider is attached and moving (or at the door): the map is live. */
+private val LIVE = setOf("assigned", "en_route", "arriving", "collecting")
+private val CANCELLABLE = setOf("requested", "assigned", "en_route")
+
+/** 40 m: less than that and the old street path still starts at the rider. */
+private const val REROUTE_KM = 0.04
+/** A heartbeat every 15 s means 3+ min of silence is the app closed, not traffic. */
+private const val STALE_MINUTES = 3L
+
+private val NoPickupTracking = TrackingUi(
+    headerTitle = "Tu recojo",
+    riderLine = "",
+    etaText = "",
+    itemsText = "",
+    statusMessage = "Aún no tienes recojos. Escanea tus residuos y pide uno desde la cámara.",
+)
+
+private fun latLngOf(lat: Double?, lng: Double?): RoutePlanner.LatLng? =
+    if (lat != null && lng != null) RoutePlanner.LatLng(lat, lng) else null
 
 // ---- Mapping helpers ----
 
@@ -566,6 +812,7 @@ private fun GeneratorProfileDto.toUiState(): GeneratorUiState {
         recycled = "%.0f kg".format(Locale.US, recycled_kg),
         water = "%.1f m³".format(Locale.US, water_saved_l / 1000.0),
         moneyValue = "S/%.2f".format(Locale.US, points_balance / 1000.0),
+        pendingPoints = points_pending,
     )
 }
 
@@ -590,7 +837,8 @@ private fun buildWallet(
         options = options.mapIndexed { i, o ->
             val mv = if (o.kind == "cash" && o.points_per_unit > 0) o.min_points / o.points_per_unit * o.unit_value else 0.0
             RedeemOptionUi(
-                kind = o.kind, title = o.name, rule = o.description ?: "", suggested = i == 0,
+                kind = o.kind, code = o.code, partner = o.partner.orEmpty(),
+                title = o.name, rule = o.description ?: "", suggested = i == 0,
                 optionId = o.id, cost = o.min_points, monetaryValue = mv, affordable = balance >= o.min_points,
             )
         },
@@ -618,13 +866,25 @@ private fun LeaderboardEntryDto.toUi(me: String?, topPoints: Int): RankEntryUi {
     )
 }
 
-private fun buildHistory(detections: List<DetectionDto>, redemptions: List<RedemptionDto>): HistoryUi {
-    val sections = mutableListOf<HistorySectionUi>()
-    detections
-        .groupBy { MakiTime.dayLabel(it.detected_at) }
-        .forEach { (label, dets) ->
-            sections += HistorySectionUi(label, dets.map { it.toHistoryEntry() })
-        }
+/**
+ * One timeline: scans and pickups interleaved by day, newest first, then the
+ * redemptions. Pickups used to be missing entirely — after asking for one, the
+ * family had nowhere to find it again.
+ */
+private fun buildHistory(
+    detections: List<DetectionDto>,
+    redemptions: List<RedemptionDto>,
+    pickups: List<PickupDto>,
+): HistoryUi {
+    val timeline = detections.map { it.detected_at to it.toHistoryEntry() } +
+        // A pickup belongs to the day it was collected, not the day it was asked
+        // for: one finished today was filed under "4 SEP".
+        pickups.map { (it.completed_at ?: it.created_at).orEmpty() to it.toHistoryEntry() }
+    val sections = timeline
+        .sortedByDescending { it.first }
+        .groupBy { MakiTime.dayLabel(it.first).ifBlank { "ANTERIORES" } }
+        .map { (label, rows) -> HistorySectionUi(label, rows.map { it.second }) }
+        .toMutableList()
     if (redemptions.isNotEmpty()) {
         sections += HistorySectionUi(
             "CANJES",
@@ -645,15 +905,42 @@ private fun buildHistory(detections: List<DetectionDto>, redemptions: List<Redem
 private fun DetectionDto.toHistoryEntry(): HistoryEntryUi {
     val title = itemsSummaryFromDetection(detection_items) + " detectados"
     val meta = "+${groupInt(total_points)} pts · S/%.2f".format(Locale.US, total_value)
-    val (statusText, statusKind) = when (status) {
-        "collected" -> "Recojo completado" to "done"
-        "matched", "assigned" -> "Recojo asignado" to "assigned"
-        else -> "Detectado" to null
+    val statusText = when (status) {
+        "collected" -> "Recogido"
+        "scheduled" -> "Recojo pedido"
+        "pending" -> "Listo para pedir recojo"
+        else -> null
     }
     val firstCode = detection_items.firstOrNull()?.materials?.code ?: "PET"
     return HistoryEntryUi(
         isRedeem = false, code = firstCode, title = title, meta = meta,
-        statusText = statusText, statusKind = statusKind, note = null, amount = null,
+        statusText = statusText, statusKind = null, note = null, amount = null,
+    )
+}
+
+private fun PickupDto.toHistoryEntry(): HistoryEntryUi {
+    val (statusText, kind) = when (status) {
+        "requested" -> "Buscando Eco-Rider" to "assigned"
+        "assigned" -> "Eco-Rider asignado · toca para seguirlo" to "assigned"
+        "en_route", "arriving" -> "En camino · toca para seguirlo" to "assigned"
+        "collecting" -> "Recolectando en tu puerta" to "assigned"
+        "completed" -> "Recojo completado" to "done"
+        "cancelled" -> "Cancelado" to "cancelled"
+        else -> "No se pudo recoger" to "cancelled"
+    }
+    val points = generator_points_awarded?.takeIf { it > 0 }
+    return HistoryEntryUi(
+        isRedeem = false,
+        code = pickup_items.firstOrNull()?.materials?.code ?: "PET",
+        title = "Recojo · ${itemsSummary(pickup_items)}",
+        meta = listOfNotNull(window_label, rider?.display_name).joinToString(" · ").ifBlank { code.orEmpty() },
+        statusText = statusText,
+        statusKind = kind,
+        // A cancelled pickup promised "+19 pts al recoger" that will never come.
+        note = points?.takeIf { kind != "cancelled" }
+            ?.let { if (status == "completed") "+$it pts por confirmar en el acopio" else "+$it pts al recoger" },
+        amount = null,
+        pickupId = id,
     )
 }
 
@@ -675,6 +962,24 @@ private fun DetectResultDto.toUi(streakDays: Int, prices: List<MaterialPriceDto>
     )
 }
 
+/** The row for the units whose label the AI couldn't read. */
+internal const val UNNAMED_BRAND = "Sin marca legible"
+
+/**
+ * Units per brand, biggest first, with a row owning up to the units with no legible label:
+ * the AI leaves a brand out rather than guess, and two brands under a count of 4 read as a
+ * miscount on the phone. "Agua Fiel" and "Aguafiel" are one bottle read twice: one row.
+ * Empty when no label was read at all; the material's own stepper covers that.
+ */
+internal fun brandRows(brands: Map<String, Int>, quantity: Int): Map<String, Int> {
+    val named = brands.entries.groupBy { brandKey(it.key) ?: it.key }.values
+        .map { same -> same.first().key to same.maxOf { it.value } }
+        .sortedByDescending { it.second }
+    if (named.isEmpty()) return emptyMap()
+    val unnamed = quantity - named.sumOf { it.second }
+    return (named + listOfNotNull(if (unnamed > 0) UNNAMED_BRAND to unnamed else null)).toMap()
+}
+
 private fun DetectedItemDto.toUi(): DetectedItemUi {
     val meta = "Confianza ${(confidence * 100).toInt()}%" +
         if (quality > 0) " · Calidad %.1f".format(Locale.US, quality) else ""
@@ -685,6 +990,7 @@ private fun DetectedItemDto.toUi(): DetectedItemUi {
         meta = meta,
         note = if (quality >= 0.8) "“Limpio y en buen estado”" else null,
         detectedQty = quantity,
+        brandRows = brandRows(brands, quantity),
     )
 }
 
@@ -704,7 +1010,7 @@ private fun com.example.maki.data.ChallengeDto.toUi(): ChallengeUi {
     )
 }
 
-private fun CollectionCenterDto.toUi(): CenterUi = CenterUi(
+private fun CollectionCenterDto.toUi(km: Double? = null): CenterUi = CenterUi(
     name = name,
     address = address_line ?: "Dirección no disponible",
     open = is_open,
@@ -712,6 +1018,7 @@ private fun CollectionCenterDto.toUi(): CenterUi = CenterUi(
     lat = latitude,
     lng = longitude,
     phone = phone,
+    km = km,
 )
 
 private fun NotificationDto.toUi(highlighted: Boolean) = NotifUi(
@@ -722,6 +1029,7 @@ private fun NotificationDto.toUi(highlighted: Boolean) = NotifUi(
     unread = !is_read,
     highlighted = highlighted,
     id = id,
+    aboutPickup = reference_type == "pickup",
 )
 
 // ---- Small format helpers ----
@@ -782,12 +1090,20 @@ private fun scheduledDateFor(windowLabel: String): String {
     return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time)
 }
 
-private fun vehicleLabel(v: String?): String = when (v) {
+internal fun vehicleLabel(v: String?): String = when (v) {
     "moto" -> "Moto"
     "bici", "bicicleta" -> "Bici"
+    "triciclo" -> "Triciclo"
+    "furgoneta" -> "Furgoneta"
     "auto" -> "Auto"
     "a_pie" -> "A pie"
     else -> "Vehículo"
+}
+
+private fun homeActiveTitle(status: String, rider: String?): String = when (status) {
+    "requested" -> "Buscando un Eco-Rider"
+    "collecting" -> "${rider ?: "Tu Eco-Rider"} está en tu puerta"
+    else -> "${rider ?: "Tu Eco-Rider"} va en camino"
 }
 
 private fun trackingHeader(status: String): String = when (status) {
@@ -801,10 +1117,12 @@ private fun trackingHeader(status: String): String = when (status) {
 }
 
 private fun trackingMessage(status: String, rider: String): String = when (status) {
-    "requested" -> "Buscando un Eco-Rider disponible cerca de ti."
-    "assigned", "en_route", "arriving" -> "$rider ya salió. ¡Ten listos tus residuos!"
-    "collecting" -> "$rider está recogiendo tus residuos."
-    "completed" -> "$rider recogió tus residuos. ¡Gracias por reciclar!"
+    "requested" -> "Buscando un Eco-Rider disponible cerca de ti. Te avisaremos apenas uno lo tome."
+    "assigned" -> "$rider tomó tu recojo y saldrá pronto. ¡Ten listos tus residuos!"
+    "en_route" -> "$rider va en camino. Míralo acercarse en el mapa."
+    "arriving" -> "$rider está a pocos metros de tu casa."
+    "collecting" -> "$rider está recogiendo y contando tus residuos."
+    "completed" -> "$rider recogió tus residuos. Tus puntos se confirman al pesarse en el acopio."
     "cancelled" -> "Este recojo fue cancelado."
     else -> "Seguimiento de tu recojo."
 }
@@ -816,7 +1134,13 @@ object MakiTime {
     private val monthsEs = arrayOf("Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic")
     private val weekdaysEs = arrayOf("DOMINGO", "LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES", "SÁBADO")
 
-    private fun parse(ts: String): Date? = try { parser.parse(ts.take(19)) } catch (e: Exception) { null }
+    private val dateOnly = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+
+    // Timestamps arrive as "2026-10-05T12:00:00Z", but a leaderboard period is a
+    // plain date — parsing only the long form left the label empty ("Del  al").
+    private fun parse(ts: String): Date? = try {
+        if (ts.length <= 10) dateOnly.parse(ts) else parser.parse(ts.take(19))
+    } catch (e: Exception) { null }
 
     /** Epoch millis for an ISO stamp, or null when it cannot be parsed (date filters). */
     fun millis(ts: String): Long? = parse(ts)?.time
@@ -832,7 +1156,10 @@ object MakiTime {
         return when (daysAgo(d)) {
             0 -> "HOY"
             1 -> "AYER"
-            else -> weekdaysEs[Calendar.getInstance().apply { time = d }.get(Calendar.DAY_OF_WEEK) - 1]
+            // A weekday is only unambiguous within the week: a pickup from last
+            // Friday was filed under "VIERNES" as if it were this week's.
+            in 2..6 -> weekdaysEs[Calendar.getInstance().apply { time = d }.get(Calendar.DAY_OF_WEEK) - 1]
+            else -> dayMonth(ts).uppercase(Locale("es", "PE"))
         }
     }
 
@@ -847,6 +1174,19 @@ object MakiTime {
             else -> dayMonth(ts)
         }
     }
+
+    /**
+     * Wall-clock time [minutes] from now ("4:35 p. m.") — an ETA a rider can act on:
+     * "28 min" needs mental arithmetic while riding, an arrival hour does not.
+     */
+    fun clockPlus(minutes: Int): String {
+        val c = Calendar.getInstance().apply { add(Calendar.MINUTE, minutes) }
+        return clockAt(c.timeInMillis)
+    }
+
+    /** The clock face for an instant ("3:00 p. m."). */
+    fun clockAt(millis: Long): String =
+        SimpleDateFormat("h:mm a", Locale("es", "PE")).format(Date(millis))
 
     private fun daysAgo(d: Date): Int {
         val day = Calendar.getInstance().apply { time = d; clearTime() }

@@ -6,52 +6,69 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.DirectionsBike
-import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Inventory2
-import androidx.compose.material.icons.filled.RocketLaunch
-import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.example.maki.navigation.RiderRoutes
-import com.example.maki.ui.components.IconBadge
-import com.example.maki.ui.components.makiShadow
+import com.example.maki.ui.components.makiScreen
+import com.example.maki.ui.components.HeroCard
+import com.example.maki.ui.components.MetricTile
+import com.example.maki.ui.components.NavRow
+import com.example.maki.ui.components.PrimaryButton
+import com.example.maki.ui.components.ProgressTrack
+import com.example.maki.ui.components.SectionLabel
+import com.example.maki.ui.components.StatusChip
+import com.example.maki.ui.components.makiCard
 import com.example.maki.ui.theme.MAKITheme
 import com.example.maki.ui.theme.MakiColors
-import com.example.maki.ui.theme.MakiFont
+import com.example.maki.ui.theme.MakiRadius
+import com.example.maki.ui.theme.MakiSpace
+import com.example.maki.ui.theme.MakiType
+import java.util.Calendar
 
 // Neutral defaults: every field is filled by RiderViewModel from the database.
 // A placeholder that looks like real data is worse than an em dash.
@@ -59,13 +76,24 @@ data class RiderDashboardUiState(
     val riderName: String = "",
     val zone: String = "",
     val unreadCount: Int = 0,
+    /** Shift switch: off and the dispatcher stops assigning stops to this rider. */
+    val onShift: Boolean = true,
+    /** "Sales hoy 3:00 p. m." when a departure is booked; blank when none is. */
+    val shiftPlan: String = "",
+    /** Today's workload: the rider's own stops, done + still to do. */
     val pickupsTotal: String = "0",
     val completed: String = "0/0",
-    val distance: String = "—",
+    /** Open requests anyone can take — not counted as the rider's own work. */
+    val onBoard: String = "0",
+    val boardHint: String = "",
     val earnedToday: String = "S/0.00",
+    val hasNextStop: Boolean = false,
+    /** False while the next stop is still an open request nobody has taken. */
+    val nextStopIsMine: Boolean = false,
     val nextStopName: String = "Sin recojos pendientes",
     val nextStopAddress: String = "Te avisaremos cuando haya solicitudes",
     val nextStopDistance: String = "",
+    val nextStopEta: String = "",
     val nextStopChips: List<String> = emptyList(),
     val monthEarnings: String = "S/0.00",
     val monthGrowth: String = "",
@@ -78,52 +106,127 @@ data class RiderDashboardUiState(
     val weatherHint: String = "",
 )
 
-private val CtaSubtitle = Color(0xFFD2E4F5)
-private val ClimaBg = Color(0x121A8CDB)
-
+/**
+ * The rider's home: what they earn today, the one stop to go to next, and the
+ * open board.
+ *
+ * Today's earnings lead so the rider can check progress between stops; the
+ * shift controls and next destination remain within the same scrolling surface.
+ */
 @Composable
 fun RiderDashboardScreen(
     state: RiderDashboardUiState = RiderDashboardUiState(),
+    busy: Boolean = false,
     onNavigate: (String) -> Unit = {},
+    onShiftChange: (Boolean) -> Unit = {},
+    /** Books a departure (epoch millis) or clears it with null. */
+    onPlanShift: (Long?) -> Unit = {},
 ) {
+    var pickTime by remember { mutableStateOf(false) }
     Column(
-        Modifier.fillMaxSize().background(MakiColors.Bg).statusBarsPadding()
+        Modifier.fillMaxSize().makiScreen().statusBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(start = MakiSpace.gutter, end = MakiSpace.gutter, top = MakiSpace.sm, bottom = MakiSpace.xl),
+        verticalArrangement = Arrangement.spacedBy(MakiSpace.stack),
     ) {
         Header(state, onBell = { onNavigate(RiderRoutes.NOTIFICATIONS) })
-        EstadoCard(state)
-        CtaIniciarRuta(onClick = { onNavigate(RiderRoutes.ROUTE) })
-        SiguienteParada(state, onClick = { onNavigate(RiderRoutes.NAVIGATION) })
+        TodayHero(state)
+        Row(horizontalArrangement = Arrangement.spacedBy(MakiSpace.stack)) {
+            MetricTile(Icons.Filled.CheckCircle, state.completed, "completados", MakiColors.Rider, Modifier.weight(1f))
+            MetricTile(Icons.Filled.Inventory2, state.onBoard, "en el tablero", MakiColors.Rider, Modifier.weight(1f))
+        }
+        SectionLabel("Tu turno")
+        ShiftCard(
+            state,
+            onChange = onShiftChange,
+            onPlan = { pickTime = true },
+            onClearPlan = { onPlanShift(null) },
+        )
+        SectionLabel("Tus recojos")
+        SiguienteParada(state, busy, onGo = { onNavigate(RiderRoutes.NAVIGATION) })
+        TableroCard(state, onClick = { onNavigate(RiderRoutes.BOARD) })
+        RutaCard(onClick = { onNavigate(RiderRoutes.ROUTE) })
+        EntregaCard(onClick = { onNavigate(RiderRoutes.DELIVERY) })
+        SectionLabel("Tu progreso")
         GananciasWidget(state, onClick = { onNavigate(RiderRoutes.EARNINGS) })
         RankingWidget(state, onClick = { onNavigate(RiderRoutes.RANKING) })
-        ClimaWidget(state)
+        // Nothing feeds the weather yet; an empty card reads as a broken one.
+        if (state.weather.isNotBlank()) ClimaWidget(state)
     }
+
+    if (pickTime) {
+        ShiftTimeDialog(
+            onDismiss = { pickTime = false },
+            onPick = { millis -> pickTime = false; onPlanShift(millis) },
+        )
+    }
+}
+
+/**
+ * Picks the hour the rider goes out. Anything already past today is taken as
+ * tomorrow — nobody schedules a departure into the past.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ShiftTimeDialog(onDismiss: () -> Unit, onPick: (Long) -> Unit) {
+    val now = remember { Calendar.getInstance() }
+    val picker = rememberTimePickerState(
+        initialHour = (now.get(Calendar.HOUR_OF_DAY) + 1) % 24,
+        initialMinute = 0,
+        is24Hour = false,
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MakiColors.Surface,
+        title = { Text("¿A qué hora sales?", style = MakiType.cardTitle, color = MakiColors.Text) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(MakiSpace.md), horizontalAlignment = Alignment.CenterHorizontally) {
+                TimePicker(state = picker)
+                Text(
+                    "Tu turno se encenderá solo a esa hora y te avisaremos.",
+                    color = MakiColors.Text2, style = MakiType.label,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(modifier = Modifier.semantics { contentDescription = "Programar salida" }, onClick = {
+                val at = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, picker.hour)
+                    set(Calendar.MINUTE, picker.minute)
+                    set(Calendar.SECOND, 0)
+                    if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DAY_OF_YEAR, 1)
+                }
+                onPick(at.timeInMillis)
+            }) { Text("Programar", style = MakiType.button, color = MakiColors.Rider) }
+        },
+        dismissButton = {
+            TextButton(modifier = Modifier.semantics { contentDescription = "Cancelar programación" }, onClick = onDismiss) { Text("Cancelar", style = MakiType.button, color = MakiColors.Text2) }
+        },
+    )
 }
 
 @Composable
 private fun Header(state: RiderDashboardUiState, onBell: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(top = 2.dp),
+        Modifier.fillMaxWidth().padding(top = MakiSpace.xs / 2),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text("Hola, ${state.riderName}", color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.AutoMirrored.Filled.DirectionsBike, null, tint = MakiColors.Rider, modifier = Modifier.size(13.dp))
-                Text(state.zone, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        Column(verticalArrangement = Arrangement.spacedBy(MakiSpace.xs / 4)) {
+            Text((if (state.riderName.isBlank()) "Hola" else "Hola, ${state.riderName}"), color = MakiColors.Text, style = MakiType.sectionHeading)
+            Row(horizontalArrangement = Arrangement.spacedBy(MakiSpace.xs), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Filled.DirectionsBike, null, tint = MakiColors.Rider, modifier = Modifier.size(MakiSpace.md))
+                Text(state.zone, color = MakiColors.Text2, style = MakiType.bodySmall)
             }
         }
         Box(contentAlignment = Alignment.TopEnd) {
             CircleButton(Icons.Outlined.Notifications, onBell)
             if (state.unreadCount > 0) {
                 Box(
-                    Modifier.padding(top = 6.dp, end = 4.dp).size(17.dp).clip(CircleShape)
-                        .background(MakiColors.Error).border(2.dp, MakiColors.Surface, CircleShape),
+                    Modifier.padding(top = MakiSpace.sm, end = MakiSpace.xs).size(MakiSpace.lg).clip(CircleShape)
+                        .background(MakiColors.Error).border(MakiSpace.xs / 2, MakiColors.Surface, CircleShape),
                     contentAlignment = Alignment.Center,
-                ) { Text("${state.unreadCount}", color = Color.White, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 9.sp) }
+                ) { Text("${state.unreadCount}", color = MakiColors.OnDark, style = MakiType.caption) }
             }
         }
     }
@@ -132,154 +235,243 @@ private fun Header(state: RiderDashboardUiState, onBell: () -> Unit) {
 @Composable
 private fun CircleButton(icon: ImageVector, onClick: () -> Unit) {
     Box(
-        Modifier.makiShadow(21.dp, 4.dp).size(42.dp).clip(CircleShape).background(MakiColors.Surface).clickable(onClick = onClick),
+        Modifier.makiCard(MakiRadius.pill).size(MakiSpace.lg * 3)
+            .clickable(onClickLabel = "Ver notificaciones", role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, null, tint = MakiColors.Text, modifier = Modifier.size(20.dp)) }
+    ) { Icon(icon, null, tint = MakiColors.Text, modifier = Modifier.size(MakiSpace.xl)) }
 }
 
+/**
+ * The shift: the one control that decides whether work arrives at all, plus the
+ * rider's own plan — go out now, or promise an hour and let the app open the
+ * shift by itself.
+ */
 @Composable
-private fun EstadoCard(state: RiderDashboardUiState) {
+private fun ShiftCard(
+    state: RiderDashboardUiState,
+    onChange: (Boolean) -> Unit,
+    onPlan: () -> Unit,
+    onClearPlan: () -> Unit,
+) {
+    val tint = if (state.onShift) MakiColors.Success else MakiColors.Text2
     Column(
-        Modifier.makiShadow(16.dp, 5.dp).clip(RoundedCornerShape(16.dp)).background(MakiColors.Surface).fillMaxWidth().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        Modifier.makiCard()
+            .fillMaxWidth().padding(start = MakiSpace.lg, top = MakiSpace.sm, end = MakiSpace.sm, bottom = MakiSpace.md),
+        verticalArrangement = Arrangement.spacedBy(MakiSpace.sm),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatCell(Modifier.weight(1f), Icons.AutoMirrored.Filled.Assignment, state.pickupsTotal, "recojos")
-            StatCell(Modifier.weight(1f), Icons.Filled.CheckCircle, state.completed, "completados")
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatCell(Modifier.weight(1f), Icons.Filled.Route, state.distance, "recorridos")
-            StatCell(Modifier.weight(1f), Icons.Filled.AccountBalanceWallet, state.earnedToday, "hoy")
-        }
-    }
-}
-
-@Composable
-private fun StatCell(modifier: Modifier, icon: ImageVector, value: String, label: String) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconBadge(icon, MakiColors.Rider, MakiColors.RiderTint, boxSize = 38.dp, iconSize = 19.dp, radius = 12.dp)
-        Column {
-            Text(value, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-            Text(label, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 11.sp)
-        }
-    }
-}
-
-@Composable
-private fun CtaIniciarRuta(onClick: () -> Unit) {
-    Row(
-        Modifier.makiShadow(18.dp, 8.dp, Color(0x59185FA5)).clip(RoundedCornerShape(18.dp)).background(MakiColors.Rider)
-            .fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier.size(50.dp).clip(RoundedCornerShape(15.dp)).background(MakiColors.WhiteTint),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Filled.RocketLaunch, null, tint = Color.White, modifier = Modifier.size(26.dp)) }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("INICIAR RUTA", color = Color.White, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-            Text("Tu ruta optimizada te espera", color = CtaSubtitle, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-        }
-        Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = Color.White, modifier = Modifier.size(22.dp))
-    }
-}
-
-@Composable
-private fun SiguienteParada(state: RiderDashboardUiState, onClick: () -> Unit) {
-    Row(
-        Modifier.makiShadow(16.dp, 5.dp).clip(RoundedCornerShape(16.dp)).background(MakiColors.Surface).fillMaxWidth()
-            .height(IntrinsicSize.Min).clickable(onClick = onClick),
-    ) {
-        Box(Modifier.width(4.dp).fillMaxHeight().background(MakiColors.Rider))
-        Column(Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Schedule, null, tint = MakiColors.Rider, modifier = Modifier.size(15.dp))
-                Text("SIGUIENTE PARADA", color = MakiColors.Rider, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                Text(state.nextStopDistance, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(MakiSpace.md), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(MakiSpace.sm).clip(CircleShape).background(tint))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(MakiSpace.xs / 4)) {
+                Text(
+                    if (state.onShift) "En turno" else "Fuera de turno",
+                    color = MakiColors.Text, style = MakiType.cardTitle,
+                )
+                Text(
+                    if (state.onShift) "Recibes recojos del despacho automático"
+                    else "No te asignarán recojos; puedes tomarlos del tablero",
+                    color = MakiColors.Text2, style = MakiType.label,
+                )
             }
-            Text(state.nextStopName, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-            Text(state.nextStopAddress, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-            Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                state.nextStopChips.forEach { MaterialChip(it) }
+            Switch(
+                checked = state.onShift,
+                onCheckedChange = onChange,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = MakiColors.OnDark,
+                    checkedTrackColor = MakiColors.Success,
+                    uncheckedThumbColor = MakiColors.Surface,
+                    uncheckedTrackColor = MakiColors.Border,
+                ),
+                modifier = Modifier.heightIn(min = MakiSpace.lg * 3).semantics {
+                    contentDescription = if (state.onShift) "En turno, tocar para salir de turno"
+                                         else "Fuera de turno, tocar para entrar en turno"
+                },
+            )
+        }
+        if (state.shiftPlan.isNotBlank()) {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(MakiRadius.badge)).background(MakiColors.RiderTint)
+                    .padding(horizontal = MakiSpace.md, vertical = MakiSpace.sm),
+                horizontalArrangement = Arrangement.spacedBy(MakiSpace.sm), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.Alarm, null, tint = MakiColors.Rider, modifier = Modifier.size(MakiSpace.lg))
+                Text(
+                    state.shiftPlan, color = MakiColors.Rider, style = MakiType.bodySmall, modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "Quitar", color = MakiColors.Text2, style = MakiType.label,
+                    modifier = Modifier.clip(RoundedCornerShape(MakiRadius.chip)).clickable(onClickLabel = "Quitar salida programada", role = Role.Button, onClick = onClearPlan)
+                        .heightIn(min = MakiSpace.lg * 3).padding(horizontal = MakiSpace.sm, vertical = MakiSpace.xs),
+                )
             }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MakiSpace.sm)) {
+                if (!state.onShift) {
+                    ShiftAction(Modifier.weight(1f), Icons.Filled.PlayArrow, "Salir ahora", filled = true) { onChange(true) }
+                }
+                ShiftAction(Modifier.weight(1f), Icons.Filled.Alarm, "Programar salida", filled = false, onClick = onPlan)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShiftAction(modifier: Modifier, icon: ImageVector, label: String, filled: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier.clip(RoundedCornerShape(MakiRadius.badge))
+            .background(if (filled) MakiColors.Rider else MakiColors.RiderTint)
+            .clickable(onClickLabel = label, role = Role.Button, onClick = onClick)
+            .heightIn(min = MakiSpace.lg * 3).padding(vertical = MakiSpace.md),
+        horizontalArrangement = Arrangement.spacedBy(MakiSpace.sm, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = if (filled) MakiColors.OnDark else MakiColors.Rider, modifier = Modifier.size(MakiSpace.lg))
+        Text(
+            label, color = if (filled) MakiColors.OnDark else MakiColors.Rider,
+            style = MakiType.button,
+        )
+    }
+}
+
+/** What today has produced so far — the number a rider checks between stops. */
+@Composable
+private fun TodayHero(state: RiderDashboardUiState) {
+    HeroCard(accent = MakiColors.Rider, overline = "Ganado hoy", metric = state.earnedToday)
+}
+
+/**
+ * The next stop, with the one action that matters. An open request says so and
+ * the button offers to take it; an accepted one goes straight to navigation.
+ */
+@Composable
+private fun SiguienteParada(state: RiderDashboardUiState, busy: Boolean, onGo: () -> Unit) {
+    Column(
+        Modifier.makiCard()
+            .fillMaxWidth().padding(MakiSpace.lg),
+        verticalArrangement = Arrangement.spacedBy(MakiSpace.md),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(MakiSpace.sm), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Schedule, null, tint = MakiColors.Rider, modifier = Modifier.size(MakiSpace.lg))
+            Text(
+                if (state.nextStopIsMine) "SIGUIENTE PARADA" else "DISPONIBLE AHORA",
+                color = MakiColors.Rider, style = MakiType.label,
+                modifier = Modifier.weight(1f),
+            )
+            if (state.nextStopDistance.isNotBlank() && state.nextStopIsMine) {
+                Text(state.nextStopDistance, color = MakiColors.Text2, style = MakiType.label)
+            }
+        }
+        Text(state.nextStopName, color = MakiColors.Text, style = MakiType.sectionHeading)
+        Row(horizontalArrangement = Arrangement.spacedBy(MakiSpace.sm), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Place, null, tint = MakiColors.Text2, modifier = Modifier.size(MakiSpace.lg))
+            Text(state.nextStopAddress, color = MakiColors.Text2, style = MakiType.bodySmall)
+        }
+        if (state.nextStopEta.isNotBlank()) {
+            StatusChip(state.nextStopEta, MakiColors.Rider)
+        }
+        if (state.nextStopChips.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(MakiSpace.sm)) {
+                state.nextStopChips.take(3).forEach { MaterialChip(it) }
+            }
+        }
+        if (state.hasNextStop) {
+            PrimaryButton(
+                if (state.nextStopIsMine) "Ir a la parada" else "Tomar este recojo",
+                Modifier.fillMaxWidth(),
+                icon = Icons.AutoMirrored.Filled.ArrowForward,
+                color = MakiColors.Rider,
+                enabled = !busy,
+                onClick = onGo,
+            )
         }
     }
 }
 
 @Composable
 private fun MaterialChip(label: String) {
-    Row(
-        Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0x0D185FA5)).padding(start = 9.dp, top = 5.dp, end = 10.dp, bottom = 5.dp),
-        horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Filled.Inventory2, null, tint = MakiColors.Rider, modifier = Modifier.size(13.dp))
-        Text(label, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-    }
+    StatusChip(label, MakiColors.Rider)
+}
+
+/** The open board used to be a number nobody could open. Now it is a door. */
+@Composable
+private fun TableroCard(state: RiderDashboardUiState, onClick: () -> Unit) {
+    NavRow(
+        icon = Icons.Filled.Inventory2, title = "Tablero de solicitudes",
+        subtitle = state.boardHint.ifBlank { "Mira las solicitudes abiertas cerca de ti" },
+        accent = MakiColors.Rider, onClick = onClick,
+    )
+}
+
+@Composable
+private fun RutaCard(onClick: () -> Unit) {
+    NavRow(Icons.Filled.Map, "Mi ruta del día", "Orden más rápido por calles y hora de llegada",
+        accent = MakiColors.Rider, onClick = onClick)
+}
+
+/**
+ * Always visible, like the route card. Counting the load here would cost a query on
+ * every dashboard poll, and a rider who just closed their last stop has to be able
+ * to find this without the card first noticing.
+ */
+@Composable
+private fun EntregaCard(onClick: () -> Unit) {
+    NavRow(Icons.Filled.LocalShipping, "Entregar en acopio", "Lleva tus recojos cerrados y cobra al pesaje",
+        accent = MakiColors.Rider, onClick = onClick)
 }
 
 @Composable
 private fun GananciasWidget(state: RiderDashboardUiState, onClick: () -> Unit) {
-    Column(
-        Modifier.makiShadow(16.dp, 5.dp).clip(RoundedCornerShape(16.dp)).background(MakiColors.Surface).fillMaxWidth()
-            .clickable(onClick = onClick).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.AccountBalanceWallet, null, tint = MakiColors.Money, modifier = Modifier.size(18.dp))
-                Text("Ganancias del mes", color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            }
-            Row(
-                Modifier.clip(RoundedCornerShape(10.dp)).background(MakiColors.SuccessTint).padding(start = 6.dp, top = 4.dp, end = 8.dp, bottom = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.AutoMirrored.Filled.TrendingUp, null, tint = MakiColors.Success, modifier = Modifier.size(13.dp))
-                Text(state.monthGrowth, color = MakiColors.Success, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
-            }
-        }
-        Text(state.monthEarnings, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 30.sp)
-        Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(MakiColors.Border)) {
-            Box(Modifier.fillMaxWidth(state.goalProgress).height(8.dp).clip(RoundedCornerShape(4.dp)).background(MakiColors.Rider))
-        }
+    Column(verticalArrangement = Arrangement.spacedBy(MakiSpace.sm)) {
+        MetricTile(Icons.Filled.AccountBalanceWallet, state.monthEarnings, "Ganancias del mes",
+            MakiColors.Rider, Modifier.fillMaxWidth(), onClick = onClick)
+        if (state.monthGrowth.isNotBlank()) StatusChip(state.monthGrowth, MakiColors.Success)
+        ProgressTrack(state.goalProgress, track = MakiColors.Border, fill = MakiColors.Rider)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(state.goalPctText, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-            Text(state.goalText, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text(state.goalPctText, color = MakiColors.Text2, style = MakiType.label)
+            Text(state.goalText, color = MakiColors.Text2, style = MakiType.label)
         }
     }
 }
 
 @Composable
 private fun RankingWidget(state: RiderDashboardUiState, onClick: () -> Unit) {
-    Row(
-        Modifier.makiShadow(16.dp, 5.dp).clip(RoundedCornerShape(16.dp)).background(MakiColors.Surface).fillMaxWidth()
-            .clickable(onClick = onClick).padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconBadge(Icons.Filled.EmojiEvents, MakiColors.Money, MakiColors.MoneyTint, boxSize = 44.dp, iconSize = 23.dp, radius = 14.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(state.rankingTitle, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
-            Text(state.rankingSubtitle, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-        }
-        Icon(Icons.Filled.ChevronRight, null, tint = MakiColors.Rider, modifier = Modifier.size(20.dp))
-    }
+    NavRow(
+        Icons.Filled.EmojiEvents, state.rankingTitle.ifBlank { "Ranking de riders" },
+        state.rankingSubtitle.ifBlank { "Mira tu posición de esta semana" },
+        accent = MakiColors.Rider, onClick = onClick,
+    )
 }
 
 @Composable
 private fun ClimaWidget(state: RiderDashboardUiState) {
     Row(
-        Modifier.clip(RoundedCornerShape(16.dp)).background(ClimaBg).fillMaxWidth().padding(14.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+        Modifier.clip(RoundedCornerShape(MakiRadius.card)).background(MakiColors.RiderTint).fillMaxWidth().padding(MakiSpace.lg),
+        horizontalArrangement = Arrangement.spacedBy(MakiSpace.md), verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Filled.WbSunny, null, tint = MakiColors.Money, modifier = Modifier.size(24.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(state.weather, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Text(state.weatherHint, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+        Icon(Icons.Filled.WbSunny, null, tint = MakiColors.Money, modifier = Modifier.size(MakiSpace.lg * 1.5f))
+        Column(verticalArrangement = Arrangement.spacedBy(MakiSpace.xs / 4)) {
+            Text(state.weather, color = MakiColors.Text, style = MakiType.rowTitle)
+            Text(state.weatherHint, color = MakiColors.Text2, style = MakiType.label)
         }
     }
 }
 
-@androidx.compose.ui.tooling.preview.Preview(showBackground = true, widthDp = 390, heightDp = 900)
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true, widthDp = 390, heightDp = 1100)
 @Composable
 private fun RiderDashboardPreview() {
-    MAKITheme { RiderDashboardScreen() }
+    MAKITheme {
+        RiderDashboardScreen(
+            state = SampleDashboard,
+        )
+    }
 }
+
+private val SampleDashboard = RiderDashboardUiState(
+    riderName = "Carlos", zone = "Moto · En turno", unreadCount = 2,
+    completed = "2/5", onBoard = "4", boardHint = "4 recojos esperando un Eco-Rider",
+    earnedToday = "S/12.40", hasNextStop = true, nextStopIsMine = true,
+    nextStopName = "Fam. Quispe", nextStopAddress = "Jr. Las Flores 240",
+    nextStopDistance = "A 800 m", nextStopEta = "Llegas 4:35 p. m.",
+    nextStopChips = listOf("12 PET", "4 latas"),
+    monthEarnings = "S/340.00", goalProgress = 0.75f,
+    goalPctText = "75% de tu meta", goalText = "Meta: S/450.00",
+)

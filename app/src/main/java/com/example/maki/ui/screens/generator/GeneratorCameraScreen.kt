@@ -1,5 +1,9 @@
 package com.example.maki.ui.screens.generator
 
+import android.util.Size
+import java.util.concurrent.Executor
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -8,11 +12,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview as CameraXPreview
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.core.LinearEasing
@@ -21,6 +27,11 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,6 +50,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
@@ -51,11 +63,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,11 +78,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.example.maki.data.DetectResultDto
@@ -83,38 +93,45 @@ import com.example.maki.data.ScanObsItemDto
 import com.example.maki.data.ScanObservationDto
 import com.example.maki.data.TrainingDataStore
 import com.example.maki.ui.components.PrimaryButton
+import com.example.maki.ui.components.SecondaryButton
+import com.example.maki.ui.theme.MakiColors
+import com.example.maki.ui.theme.MakiType
 import com.example.maki.ui.theme.MAKITheme
-import com.example.maki.ui.theme.MakiFont
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.UUID
-import kotlin.math.abs
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicReference
 
-private val DetectGreen = Color(0xFF34D399)
-private val DetectAmber = Color(0xFFFBBF24)
-private val Ink = Color(0xFF0B0F0D)
 
-/** Pause between analysed frames. The free vision tiers meter every call, so this is
- *  the floor; the server raises it via retry_after_ms when a provider is rate-limited. */
-private const val FRAME_INTERVAL_MS = 2500L
+/** detect-material's MAX_GROUPS: one group per photo, so this is the most photos a scan holds. */
+private const val MAX_PHOTOS = 10
+
+/** A photo is read once and carefully: more pixels than a live frame, so labels are legible. */
+private const val PHOTO_MAX_DIM = 1600
+
+/** How many times a photo is re-sent while every provider is busy before giving up. */
+private const val BUSY_RETRIES = 3
+
+private enum class Phase { Aim, Analyzing, Result }
+
+private const val NEXT_PHOTO_HINT = "Toma otra foto: las marcas ya contadas no se repiten, solo suma lo nuevo"
 
 /**
- * Live counting scanner. The camera stays open: every ~2s a frame goes to the
- * detect-material Edge Function, which runs the anti-spoof gate + VLM and returns what
- * it counted in that frame, signed. The user walks around their waste watching the tally
- * grow and presses "Terminar" — only then does the server persist the detection, from
- * its own signed counts (the client can't inflate them).
+ * Photo scan: the user gathers their waste, takes ONE photo, waits on a "la IA está
+ * analizando" screen and gets the count, the brands and the estimated points. More waste
+ * goes in another photo — each photo is its own signed group and photos add up.
  *
- * Counting is MAX per material across frames, never a sum: the same bottle appears in
- * many frames, so summing would pay for it once per frame.
+ * It replaced the live scan (2026-11-01). Counting a walk-around needs MAX per material
+ * across frames, which on the phone turned into miscounts: the same bottles re-framed in
+ * a new group were booked twice, and every frame was a metered vision call (~24/min,
+ * which is what capped the free tier at ~3 people scanning at once). One photo is one call.
+ *
+ * The server side is unchanged: each photo is a `preview` (liveness gate + VLM, signed
+ * count) and "Terminar" is the `commit` that books them — the client can't inflate them.
  */
 @Composable
 fun GeneratorCameraScreen(
@@ -128,16 +145,21 @@ fun GeneratorCameraScreen(
 
     val sessionId = remember { UUID.randomUUID().toString() }
     val observations = remember { mutableStateListOf<ScanObservationDto>() }
-    // Running tally per material code, and the boxes from the frame just analysed.
+    // The photo on screen and the earlier ones, folded by the same rule `commit` applies.
     val tally = remember { mutableStateListOf<DetectedItemDto>() }
-    var boxes by remember { mutableStateOf<List<DetectedItemDto>>(emptyList()) }
-    var lastFrame by remember { mutableStateOf<Bitmap?>(null) }
+    val closedPhotos = remember { mutableStateListOf<List<DetectedItemDto>>() }
+    var group by remember { mutableIntStateOf(0) }
+    val counted = pileTally(closedPhotos + listOf(tally.toList()))
 
+    var phase by remember { mutableStateOf(Phase.Aim) }
+    var photo by remember { mutableStateOf<Bitmap?>(null) }
+    // The last booked photo, kept as the local training sample when the scan closes.
+    var sample by remember { mutableStateOf<Bitmap?>(null) }
+    var boxes by remember { mutableStateOf<List<DetectedItemDto>>(emptyList()) }
     var flashOn by remember { mutableStateOf(false) }
-    var analyzing by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
-    var hint by remember { mutableStateOf("Recorre tus residuos: la IA los va contando") }
-    var grabber by remember { mutableStateOf<FrameGrabber?>(null) }
+    var hint by remember { mutableStateOf("Junta tus residuos con las etiquetas a la vista y toma una foto") }
+    var taker by remember { mutableStateOf<PhotoTaker?>(null) }
     // First scan ever: explain the camera before the user is staring at a viewfinder.
     var showCoach by remember { mutableStateOf(!inspection && !MakiPrefs.cameraCoachSeen) }
 
@@ -157,82 +179,106 @@ fun GeneratorCameraScreen(
         if (!hasPermission && !inspection && !showCoach) permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    // The scan loop: one frame in flight at a time, for as long as the screen is open.
-    LaunchedEffect(hasPermission, grabber, closing, showCoach) {
-        val source = grabber
-        if (!hasPermission || source == null || closing || showCoach || inspection) return@LaunchedEffect
-        val sensors = LivenessSensors(context).apply { start() }
-        var lastScene: IntArray? = null
-        var wait = FRAME_INTERVAL_MS
-        try {
-            while (isActive) {
-                val bitmap = source.grab()
-                if (bitmap == null) { delay(wait); continue }
-                lastFrame = bitmap
+    // Motion sensors run for the whole screen: the liveness gate wants a sweep in the last
+    // few seconds, and the user makes it while lifting the phone to aim.
+    val sensors = remember { LivenessSensors(context) }
+    DisposableEffect(inspection) {
+        if (!inspection) sensors.start()
+        onDispose { sensors.stop() }
+    }
 
-                // Pointing at the same thing as a second ago has nothing new to count, and
-                // the free vision tiers are metered per call — don't spend one on a repeat.
-                val scene = withContext(Dispatchers.Default) { sceneSignature(bitmap) }
-                if (tally.isNotEmpty() && !sceneChanged(lastScene, scene)) { delay(800); continue }
-                lastScene = scene
+    /** Drops the photo on screen (or the one that failed) and goes back to aiming, same group. */
+    fun retake() {
+        observations.removeAll { it.group == group }
+        tally.clear()
+        boxes = emptyList()
+        photo = null
+        phase = Phase.Aim
+        hint = if (group == 0) "Junta tus residuos con las etiquetas a la vista y toma una foto"
+        else NEXT_PHOTO_HINT
+    }
 
-                analyzing = true
-                val result = runCatching {
-                    val encoded = withContext(Dispatchers.IO) {
-                        ImageEncoder.toBase64(ImageEncoder.scaled(bitmap), quality = 70)
-                    }
-                    MakiRepository.previewFrame(sessionId, encoded, sensors.snapshot())
-                }.getOrElse { e ->
-                    hint = e.message?.takeIf { it.isNotBlank() } ?: "Sin conexión con el detector."
-                    null
-                }
-                analyzing = false
-                wait = result?.retry_after_ms ?: FRAME_INTERVAL_MS
-                if (result != null) {
-                    hint = when {
-                        result.rejected != null -> result.message ?: "Sigue apuntando a tus residuos."
-                        else -> {
-                            observations += ScanObservationDto(
-                                items = result.items.map { ScanObsItemDto(it.code, it.quantity, it.quality) },
-                                token = result.token.orEmpty(),
-                            )
-                            boxes = result.items
-                            mergeIntoTally(tally, result.items)
-                            "${tally.sumOf { it.quantity }} materiales contados"
-                        }
-                    }
-                    if (result.rejected != null) {
-                        boxes = emptyList()
-                        // A rejected frame taught us nothing; let the next one be re-read.
-                        lastScene = null
-                    }
-                }
-                delay(wait)
+    fun shoot() {
+        val source = taker ?: return
+        // Right away: a real photo takes a moment to focus, and the tap must answer now.
+        phase = Phase.Analyzing
+        scope.launch {
+            val bitmap = source.take() ?: run {
+                hint = "No se pudo tomar la foto. Intenta otra vez."
+                phase = Phase.Aim
+                return@launch
             }
-        } finally {
-            sensors.stop()
+            photo = bitmap
+            val photoGroup = group
+            val encoded = withContext(Dispatchers.IO) {
+                ImageEncoder.toBase64(bitmap, quality = 85)
+            }
+            // The free vision tiers are busy at random: wait them out a few times on the
+            // same photo instead of making the user shoot again.
+            var result: DetectResultDto? = null
+            var failure: String? = null
+            for (attempt in 0..BUSY_RETRIES) {
+                result = runCatching { MakiRepository.previewFrame(sessionId, encoded, sensors.snapshot(), photoGroup) }
+                    .getOrElse { e -> failure = e.message?.takeIf { it.isNotBlank() } ?: "Sin conexión con la IA."; null }
+                if (result?.rejected != "busy" || attempt == BUSY_RETRIES) break
+                delay(result.retry_after_ms ?: 3000L)
+            }
+            val r = result
+            when {
+                r == null -> hint = failure ?: "Sin conexión con la IA."
+                r.rejected != null -> hint = r.message ?: "No pudimos leer la foto. Intenta otra vez."
+                else -> {
+                    observations += ScanObservationDto(
+                        items = r.items.map { ScanObsItemDto(it.code, it.quantity, it.quality, it.brand) },
+                        token = r.token.orEmpty(),
+                        group = photoGroup,
+                    )
+                    boxes = r.items
+                    sample = bitmap
+                    tally += r.items
+                    val shown = r.items.sumOf { it.quantity }
+                    val added = pileTally(closedPhotos + listOf(r.items)).sumOf { it.quantity } -
+                        pileTally(closedPhotos).sumOf { it.quantity }
+                    hint = when {
+                        added == shown -> "Encontramos $shown en esta foto · ≈ ${r.items.sumOf { it.points }} pts estimados"
+                        added > 0 -> "Encontramos $shown: ${shown - added} ya estaban contadas y suma $added nueva${if (added > 1) "s" else ""}"
+                        else -> "Ya estaban contadas. Si trajiste otra botella igual, súmala con + al terminar."
+                    }
+                }
+            }
+            phase = Phase.Result
         }
     }
 
-    Box(Modifier.fillMaxSize().background(Ink)) {
+    Box(Modifier.fillMaxSize().background(MakiColors.Ink)) {
         if (hasPermission && !inspection) {
+            // Stays mounted under the frozen photo, so "Otra foto" is instant.
             CameraPreview(
                 flashOn = flashOn,
-                onGrabberReady = { grabber = it },
+                onReady = { taker = it },
                 modifier = Modifier.fillMaxSize(),
             )
         } else if (!hasPermission) {
             PermissionPrompt(onGrant = { permissionLauncher.launch(Manifest.permission.CAMERA) })
         }
 
-        // Boxes from the last analysed frame, over the live feed.
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val w = maxWidth
-            val h = maxHeight
-            boxes.forEach { DetectionBox(it, w, h) }
+        // The photo being read, frozen, with what the AI found drawn over it.
+        photo?.let { bmp ->
+            Image(
+                bmp.asImageBitmap(), contentDescription = "Foto de tus residuos",
+                contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
+            )
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val w = maxWidth
+                val h = maxHeight
+                boxes.forEach { DetectionBox(it, w, h) }
+            }
         }
 
-        if (analyzing) ScanSweep()
+        if (phase == Phase.Analyzing) {
+            ScanSweep()
+            AnalyzingOverlay()
+        }
 
         // Top bar
         Row(
@@ -241,63 +287,82 @@ fun GeneratorCameraScreen(
         ) {
             CircleScrim(Icons.Filled.Close, onClick = onClose)
             Row(
-                Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0x59000000)).padding(start = 10.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
+                Modifier.clip(RoundedCornerShape(14.dp)).background(MakiColors.Scrim).padding(start = 10.dp, end = 12.dp, top = 7.dp, bottom = 7.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Outlined.Shield, null, tint = DetectGreen, modifier = Modifier.size(15.dp))
+                Icon(Icons.Outlined.Shield, null, tint = MakiColors.DetectOk, modifier = Modifier.size(15.dp))
                 Text(
-                    if (analyzing) "Contando…" else "Escaneo verificado",
-                    color = Color.White, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 12.sp,
+                    if (group > 0) "Foto ${group + 1}" else "Escaneo verificado",
+                    color = MakiColors.OnDark, style = MakiType.chip,
                 )
             }
-            CircleScrim(Icons.Filled.Bolt, tint = if (flashOn) DetectAmber else Color.White) {
+            CircleScrim(Icons.Filled.Bolt, tint = if (flashOn) MakiColors.DetectWarn else MakiColors.OnDark) {
                 flashOn = !flashOn
                 onInfo(if (flashOn) "Flash activado" else "Flash desactivado")
             }
         }
 
-        if (hasPermission) {
+        if (hasPermission && phase != Phase.Analyzing) {
             Column(
                 Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 20.dp, vertical = 28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                if (tally.isNotEmpty()) TallyStrip(tally)
+                if (counted.isNotEmpty()) TallyStrip(counted, group)
                 Text(
                     hint,
-                    color = Color.White, fontFamily = MakiFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                    color = MakiColors.OnDark, style = MakiType.body,
                     textAlign = TextAlign.Center,
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(MakiColors.Scrim)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
                 )
-                PrimaryButton(
-                    label = if (tally.isEmpty()) "Terminar" else "Terminar · ${tally.sumOf { it.quantity }} materiales",
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = tally.isNotEmpty() && !closing,
-                ) {
-                    closing = true
-                    scope.launch {
-                        // Keep one verified frame as a local YOLO training sample.
-                        lastFrame?.let { bmp ->
-                            runCatching {
-                                withContext(Dispatchers.IO) {
-                                    val dir = File(context.cacheDir, "captures").apply { mkdirs() }
-                                    val jpg = ImageEncoder.writeJpeg(bmp, File(dir, "scan_${System.currentTimeMillis()}.jpg"))
-                                    TrainingDataStore.save(context, jpg, tally.first().code)
-                                }
+                when (phase) {
+                    Phase.Aim -> {
+                        ShutterButton(enabled = taker != null && !closing, onClick = ::shoot)
+                        // Photos already booked can be closed from here too.
+                        if (counted.isNotEmpty()) {
+                            FinishButton(counted, closing, Modifier.fillMaxWidth()) {
+                                finish(scope, context, sample, counted, sessionId, observations, onInfo, onDetected) { closing = it }
                             }
-                        }
-                        val result = runCatching { MakiRepository.commitScan(sessionId, observations.toList()) }
-                            .getOrElse { e ->
-                                onInfo(e.message?.takeIf { it.isNotBlank() } ?: "No se pudo cerrar el escaneo.")
-                                closing = false
-                                return@launch
-                            }
-                        if (result.rejected != null || result.items.isEmpty()) {
-                            onInfo(result.message ?: "No se pudo verificar el escaneo. Intenta de nuevo.")
-                            closing = false
-                        } else {
-                            onDetected(result)
                         }
                     }
+                    Phase.Result -> {
+                        // Text-only: retaking is the escape hatch, not the main path.
+                        Text(
+                            "Repetir esta foto",
+                            color = MakiColors.OnDark, style = MakiType.label,
+                            modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                                .clickable(enabled = !closing, onClickLabel = "Repetir esta foto") { retake() }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            if (tally.isNotEmpty() && group < MAX_PHOTOS - 1) {
+                                SecondaryButton(
+                                    label = "Otra foto",
+                                    modifier = Modifier.weight(1f),
+                                    icon = Icons.Filled.Add,
+                                    color = MakiColors.DetectOk,
+                                    enabled = !closing,
+                                ) {
+                                    closedPhotos += tally.toList()
+                                    tally.clear()
+                                    group += 1
+                                    boxes = emptyList()
+                                    photo = null
+                                    phase = Phase.Aim
+                                    hint = NEXT_PHOTO_HINT
+                                }
+                            }
+                            if (counted.isNotEmpty()) {
+                                FinishButton(counted, closing, Modifier.weight(1f)) {
+                                    finish(scope, context, sample, counted, sessionId, observations, onInfo, onDetected) { closing = it }
+                                }
+                            } else {
+                                PrimaryButton("Tomar de nuevo", Modifier.weight(1f), icon = Icons.Outlined.PhotoCamera, onClick = ::retake)
+                            }
+                        }
+                    }
+                    Phase.Analyzing -> Unit
                 }
             }
         }
@@ -313,60 +378,169 @@ fun GeneratorCameraScreen(
     }
 }
 
-/**
- * Coarse fingerprint of what the camera is looking at: mean brightness over a 12x12 grid.
- * ponytail: cheap stand-in for "the user moved to something else" — swap for real motion
- * tracking only if it starts missing slow pans.
- */
-private fun sceneSignature(bitmap: Bitmap): IntArray {
-    val small = Bitmap.createScaledBitmap(bitmap, 12, 12, true)
-    return IntArray(144) { i ->
-        val px = small.getPixel(i % 12, i / 12)
-        ((px shr 16 and 0xFF) + (px shr 8 and 0xFF) + (px and 0xFF)) / 3
-    }
+@Composable
+private fun FinishButton(counted: List<DetectedItemDto>, closing: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    PrimaryButton(
+        label = "Terminar · ${counted.sumOf { it.quantity }}",
+        modifier = modifier,
+        enabled = !closing,
+        onClick = onClick,
+    )
 }
 
-/** True when the view moved enough to be worth another call to the detector. */
-private fun sceneChanged(previous: IntArray?, current: IntArray, threshold: Int = 6): Boolean {
-    if (previous == null || previous.size != current.size) return true
-    var total = 0
-    for (i in current.indices) total += abs(current[i] - previous[i])
-    return total / current.size >= threshold
-}
-
-/**
- * Folds a frame's items into the running tally: best count seen per material, never a
- * sum — the same objects reappear frame after frame.
- */
-private fun mergeIntoTally(tally: SnapshotStateList<DetectedItemDto>, items: List<DetectedItemDto>) {
-    items.forEach { item ->
-        val index = tally.indexOfFirst { it.code == item.code }
-        if (index < 0) {
-            tally += item
-        } else if (item.quantity > tally[index].quantity) {
-            tally[index] = item
+/** "Terminar": books every photo through `commit` and hands the persisted result on. */
+private fun finish(
+    scope: kotlinx.coroutines.CoroutineScope,
+    context: Context,
+    sample: Bitmap?,
+    counted: List<DetectedItemDto>,
+    sessionId: String,
+    observations: List<ScanObservationDto>,
+    onInfo: (String) -> Unit,
+    onDetected: (DetectResultDto) -> Unit,
+    setClosing: (Boolean) -> Unit,
+) {
+    setClosing(true)
+    scope.launch {
+        // Keep one verified photo as a local YOLO training sample.
+        sample?.let { bmp ->
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val dir = File(context.cacheDir, "captures").apply { mkdirs() }
+                    val jpg = ImageEncoder.writeJpeg(bmp, File(dir, "scan_${System.currentTimeMillis()}.jpg"))
+                    TrainingDataStore.save(context, jpg, counted.first().code)
+                }
+            }
+        }
+        val result = runCatching { MakiRepository.commitScan(sessionId, observations.toList()) }
+            .getOrElse { e ->
+                onInfo(e.message?.takeIf { it.isNotBlank() } ?: "No se pudo cerrar el escaneo.")
+                setClosing(false)
+                return@launch
+            }
+        if (result.rejected != null || result.items.isEmpty()) {
+            onInfo(result.message ?: "No se pudo verificar el escaneo. Intenta de nuevo.")
+            setClosing(false)
+        } else {
+            onDetected(result)
         }
     }
 }
 
-/** The materials counted so far, one chip per material. */
+/** The round shutter: the one action while aiming. */
 @Composable
-private fun TallyStrip(tally: List<DetectedItemDto>) {
+private fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier.size(76.dp).clip(CircleShape).border(4.dp, MakiColors.OnDark, CircleShape).padding(7.dp)
+            .clip(CircleShape).background(if (enabled) MakiColors.OnDark else MakiColors.Scrim)
+            .clickable(enabled = enabled, onClickLabel = "Tomar foto", role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Icon(Icons.Outlined.PhotoCamera, null, tint = MakiColors.Ink, modifier = Modifier.size(28.dp)) }
+}
+
+/** "Your material is being analysed": the wait is the product, so it says what is happening. */
+@Composable
+private fun AnalyzingOverlay() {
+    Box(Modifier.fillMaxSize().background(MakiColors.Scrim), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.padding(32.dp).clip(RoundedCornerShape(22.dp)).background(MakiColors.ScrimStrong).padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            CircularProgressIndicator(color = MakiColors.DetectOk, strokeWidth = 3.dp, modifier = Modifier.size(44.dp))
+            Text(
+                "Tu material está siendo analizado por IA",
+                color = MakiColors.OnDark, style = MakiType.sectionHeading, textAlign = TextAlign.Center,
+            )
+            Text(
+                "Contamos cada envase y leemos sus marcas. Espera unos segundos…",
+                color = MakiColors.OnDark, style = MakiType.body, textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+/**
+ * What the photos add up to, per material: the same fold as `foldPhotos` in `commit`, so the
+ * counter on screen says what the scan books. A photo sharing no brand with the earlier ones
+ * is new waste and adds up; one repeating a counted brand is the same pile framed again and
+ * adds only what grew (3, then those 3 plus a Gatorade: 4, not 7). A label that became
+ * legible may be a bottle already counted as unreadable.
+ */
+internal fun pileTally(photos: List<List<DetectedItemDto>>): List<DetectedItemDto> =
+    photos.flatten().map { it.code }.distinct().map { code ->
+        val brands = linkedMapOf<String, Int>()      // brandKey -> units
+        val names = linkedMapOf<String, String>()    // brandKey -> label as read
+        var unnamed = 0
+        var quantity = 0
+        var points = 0
+        var quality = 0.0
+        for (photo in photos) {
+            val rows = photo.filter { it.code == code }
+            if (rows.isEmpty()) continue
+            quality = maxOf(quality, rows.maxOf { it.quality })
+            val shown = rows.sumOf { it.quantity }
+            val named = rows.filter { brandKey(it.brand) != null }.groupBy { brandKey(it.brand)!! }
+            val samePile = named.keys.any { it in brands }
+            // A counted brand missing from this photo may be an unreadable one in it.
+            val covered = brands.entries.sumOf { (key, units) ->
+                (units - (named[key]?.sumOf { it.quantity } ?: 0)).coerceAtLeast(0)
+            }
+            var newlyNamed = 0
+            for ((key, same) in named) {
+                val units = same.sumOf { it.quantity }
+                val extra = if (samePile) (units - (brands[key] ?: 0)).coerceAtLeast(0) else units
+                brands[key] = (brands[key] ?: 0) + extra
+                names.getOrPut(key) { same.first().brand.orEmpty() }
+                newlyNamed += extra
+            }
+            val shownUnnamed = shown - named.values.sumOf { same -> same.sumOf { it.quantity } }
+            val grew = if (samePile) {
+                (newlyNamed + (shownUnnamed - covered).coerceAtLeast(0) - unnamed).coerceAtLeast(0)
+            } else {
+                newlyNamed + shownUnnamed
+            }
+            val add = minOf(grew, shown)
+            unnamed = (unnamed + add - newlyNamed).coerceAtLeast(0)
+            quantity += add
+            if (shown > 0) points += rows.sumOf { it.points } * add / shown
+        }
+        photos.flatten().first { it.code == code }.copy(
+            quantity = quantity, points = points, quality = quality, brand = null, box = null,
+            brands = brands.entries.associate { names.getValue(it.key) to it.value },
+        )
+    }
+
+/** "Agua Fiel", "Aguafiel" and "AGUA-FIEL" are one label read three ways. */
+internal fun brandKey(brand: String?): String? =
+    brand?.lowercase(java.util.Locale.ROOT)?.filter { it.isLetterOrDigit() }?.ifEmpty { null }
+
+/** The materials counted so far, one chip per material, plus the group in progress. */
+@Composable
+private fun TallyStrip(tally: List<DetectedItemDto>, group: Int) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (group > 0) {
+            Text(
+                "Grupo ${group + 1}",
+                color = MakiColors.OnDark, style = MakiType.chip,
+                modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(MakiColors.Scrim)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+        }
         tally.forEach { item ->
             Row(
-                Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xCC0B0F0D))
-                    .border(1.dp, DetectGreen.copy(alpha = 0.6f), RoundedCornerShape(14.dp))
+                Modifier.clip(RoundedCornerShape(14.dp)).background(MakiColors.ScrimStrong)
+                    .border(1.dp, MakiColors.DetectOk.copy(alpha = 0.6f), RoundedCornerShape(14.dp))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     item.name.ifBlank { item.code },
-                    color = Color.White, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 12.sp,
+                    color = MakiColors.OnDark, style = MakiType.chip,
                 )
                 Text(
                     "x${item.quantity}",
-                    color = DetectGreen, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp,
+                    color = MakiColors.DetectOk, style = MakiType.chip,
                 )
             }
         }
@@ -385,17 +559,17 @@ private fun ScanSweep() {
         )
         Box(
             Modifier.fillMaxWidth().offset(y = maxHeight * y).size(width = maxWidth, height = 2.dp)
-                .background(DetectGreen.copy(alpha = 0.7f)),
+                .background(MakiColors.DetectOk.copy(alpha = 0.7f)),
         )
     }
 }
 
 @Composable
 private fun ClosingOverlay() {
-    Box(Modifier.fillMaxSize().background(Color(0xCC0B0F0D)), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(MakiColors.ScrimStrong), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            CircularProgressIndicator(color = DetectGreen, strokeWidth = 3.dp, modifier = Modifier.size(44.dp))
-            Text("Cerrando el escaneo…", color = Color.White, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+            CircularProgressIndicator(color = MakiColors.DetectOk, strokeWidth = 3.dp, modifier = Modifier.size(44.dp))
+            Text("Cerrando el escaneo…", color = MakiColors.OnDark, style = MakiType.sectionHeading)
         }
     }
 }
@@ -413,22 +587,23 @@ private fun DetectionBox(item: DetectedItemDto, width: androidx.compose.ui.unit.
         Modifier
             .offset(x = width * x0, y = height * y0)
             .size(width = width * (x1 - x0), height = height * (y1 - y0))
-            .border(2.5.dp, DetectGreen, RoundedCornerShape(10.dp))
-            .background(DetectGreen.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+            .border(2.5.dp, MakiColors.DetectOk, RoundedCornerShape(10.dp))
+            .background(MakiColors.DetectOk.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
             .alpha(0.9f),
     ) {
         Row(
-            Modifier.offset(y = (-26).dp).clip(RoundedCornerShape(8.dp)).background(DetectGreen)
+            Modifier.offset(y = (-26).dp).clip(RoundedCornerShape(8.dp)).background(MakiColors.DetectOk)
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically,
         ) {
+            // The brand read on the label, live: "PET · Coca-Cola x2".
             Text(
-                "${item.name.ifBlank { item.code }} x${item.quantity}",
-                color = Ink, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp,
+                listOfNotNull(item.name.ifBlank { item.code }, item.brand).joinToString(" · ") + " x${item.quantity}",
+                color = MakiColors.Ink, style = MakiType.overline,
             )
             Text(
                 "${(item.confidence * 100).toInt()}%",
-                color = Ink.copy(alpha = 0.7f), fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 11.sp,
+                color = MakiColors.Ink.copy(alpha = 0.7f), style = MakiType.overline,
             )
         }
     }
@@ -437,21 +612,21 @@ private fun DetectionBox(item: DetectedItemDto, width: androidx.compose.ui.unit.
 /** Shown once, before the first scan: what the camera does and what it needs. */
 @Composable
 private fun CameraCoachDialog(onUnderstood: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color(0xCC000000)), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(MakiColors.ScrimStrong), contentAlignment = Alignment.Center) {
         Column(
-            Modifier.padding(28.dp).clip(RoundedCornerShape(22.dp)).background(Color.White).padding(24.dp),
+            Modifier.padding(28.dp).clip(RoundedCornerShape(22.dp)).background(MakiColors.OnDark).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
                 "Cómo funciona la cámara",
-                color = Ink, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp,
+                color = MakiColors.Ink, style = MakiType.metricMedium,
             )
-            CoachStep(Icons.Outlined.PhotoCamera, "Apunta a tus residuos", "La cámara queda abierta y la IA va contando lo que ve.")
-            CoachStep(Icons.Filled.Vibration, "Recorre el material", "Muévete alrededor: así verificamos que sea real y no una foto.")
-            CoachStep(Icons.Filled.AutoAwesome, "Pulsa Terminar", "Cerramos el conteo y te mostramos cuántos PET, latas o vidrios hay.")
+            CoachStep(Icons.Outlined.PhotoCamera, "Junta tus residuos", "Ponlos cerca de la cámara, con buena luz y con las etiquetas hacia ti, sin taparse entre ellos.")
+            CoachStep(Icons.Filled.Vibration, "Toma la foto", "Mueve un poco el teléfono al apuntar y mantenlo quieto al disparar: una foto movida pierde botellas.")
+            CoachStep(Icons.Filled.AutoAwesome, "La IA la analiza", "En unos segundos ves cuántos hay de cada marca, y puedes corregir el número. ¿Tienes más? Toma otra foto.")
             Text(
                 "Los puntos se acreditan cuando el Eco-Rider recoge el material.",
-                color = Color(0xFF6B7280), fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 17.sp,
+                color = MakiColors.Text2, style = MakiType.caption,
             )
             PrimaryButton("Entendido", Modifier.fillMaxWidth(), onClick = onUnderstood)
         }
@@ -462,54 +637,55 @@ private fun CameraCoachDialog(onUnderstood: () -> Unit) {
 private fun CoachStep(icon: ImageVector, title: String, body: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
         Box(
-            Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(Color(0x140F6E56)),
+            Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(MakiColors.GenTint),
             contentAlignment = Alignment.Center,
-        ) { Icon(icon, null, tint = Color(0xFF0F6E56), modifier = Modifier.size(19.dp)) }
+        ) { Icon(icon, null, tint = MakiColors.Gen, modifier = Modifier.size(19.dp)) }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, color = Ink, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
-            Text(body, color = Color(0xFF6B7280), fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 17.sp)
+            Text(title, color = MakiColors.Ink, style = MakiType.cardTitle)
+            Text(body, color = MakiColors.Text2, style = MakiType.caption)
         }
     }
 }
 
 /**
- * Hands the scan loop one frame at a time, on demand. ImageAnalysis (not ImageCapture)
- * is what keeps the scan continuous: no shutter sound, no file per frame, and the feed
- * never stops for the user.
+ * Takes a real photo: focused and metered. It used to copy a frame off the analysis stream,
+ * which CameraX serves at about 480x864 with no focus wait, and at that size the labels the
+ * model has to read are a few blurred pixels. Asks for 1080p, not the full sensor: decoding
+ * 12 MP into a bitmap can run a budget phone out of memory, and only [PHOTO_MAX_DIM] is sent.
  */
-private class FrameGrabber : ImageAnalysis.Analyzer {
-    private val pending = AtomicReference<CompletableDeferred<Bitmap>?>(null)
+private class PhotoTaker(private val capture: ImageCapture, private val executor: Executor) {
+    /** The upright photo, or null if the camera couldn't take it in time. */
+    suspend fun take(timeoutMs: Long = 8000): Bitmap? = withTimeoutOrNull(timeoutMs) {
+        suspendCancellableCoroutine { result ->
+            val callback = object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    val bitmap = runCatching {
+                        ImageEncoder.scaled(
+                            ImageEncoder.upright(image.toBitmap(), image.imageInfo.rotationDegrees),
+                            PHOTO_MAX_DIM,
+                        )
+                    }.getOrNull()
+                    image.close()
+                    result.resume(bitmap)
+                }
 
-    override fun analyze(image: ImageProxy) {
-        val request = pending.getAndSet(null)
-        if (request != null) {
-            runCatching { ImageEncoder.upright(image.toBitmap(), image.imageInfo.rotationDegrees) }
-                .onSuccess { request.complete(it) }
-                .onFailure { request.completeExceptionally(it) }
+                override fun onError(exception: ImageCaptureException) = result.resume(null)
+            }
+            runCatching { capture.takePicture(executor, callback) }.onFailure { result.resume(null) }
         }
-        image.close()
-    }
-
-    /** Next frame off the camera, or null if none arrives (feed not ready yet). */
-    suspend fun grab(timeoutMs: Long = 4000): Bitmap? {
-        val request = CompletableDeferred<Bitmap>()
-        pending.set(request)
-        return withTimeoutOrNull(timeoutMs) { runCatching { request.await() }.getOrNull() }
     }
 }
 
 @Composable
 private fun CameraPreview(
     flashOn: Boolean,
-    onGrabberReady: (FrameGrabber) -> Unit,
+    onReady: (PhotoTaker) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    val grabber = remember { FrameGrabber() }
     val executor = remember { Executors.newSingleThreadExecutor() }
     var camera by remember { mutableStateOf<Camera?>(null) }
 
-    LaunchedEffect(Unit) { onGrabberReady(grabber) }
     LaunchedEffect(flashOn, camera) { camera?.cameraControl?.enableTorch(flashOn) }
 
     AndroidView(
@@ -520,21 +696,23 @@ private fun CameraPreview(
             future.addListener({
                 val provider = future.get()
                 val preview = CameraXPreview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
-                val analysis = ImageAnalysis.Builder()
+                val capture = ImageCapture.Builder()
                     // 16:9 to match the preview, so the model's boxes land where the user sees the object.
                     .setResolutionSelector(
                         ResolutionSelector.Builder()
                             .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
+                            .setResolutionStrategy(
+                                ResolutionStrategy(Size(1920, 1080), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)
+                            )
                             .build()
                     )
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
                     .build()
-                    .also { it.setAnalyzer(executor, grabber) }
                 provider.unbindAll()
                 camera = provider.bindToLifecycle(
-                    lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis,
+                    lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, capture,
                 )
+                onReady(PhotoTaker(capture, executor))
             }, ContextCompat.getMainExecutor(ctx))
             previewView
         },
@@ -551,23 +729,23 @@ private fun PermissionPrompt(onGrant: () -> Unit) {
     ) {
         Text(
             "Activa la cámara para detectar tus residuos con IA",
-            color = Color.White, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 16.sp,
+            color = MakiColors.OnDark, style = MakiType.sectionHeading,
             textAlign = TextAlign.Center,
         )
         Row(
-            Modifier.padding(top = 16.dp).clip(RoundedCornerShape(14.dp)).background(DetectGreen)
+            Modifier.padding(top = 16.dp).clip(RoundedCornerShape(14.dp)).background(MakiColors.DetectOk)
                 .clickable(onClick = onGrant).padding(horizontal = 22.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Permitir cámara", color = Color(0xFF0B2A1E), fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+            Text("Permitir cámara", color = MakiColors.GenDark, style = MakiType.cardTitle)
         }
     }
 }
 
 @Composable
-private fun CircleScrim(icon: ImageVector, tint: Color = Color.White, onClick: () -> Unit) {
+private fun CircleScrim(icon: ImageVector, tint: Color = MakiColors.OnDark, onClick: () -> Unit) {
     Box(
-        Modifier.size(40.dp).clip(CircleShape).background(Color(0x59000000)).clickable(onClick = onClick),
+        Modifier.size(40.dp).clip(CircleShape).background(MakiColors.Scrim).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Icon(icon, null, tint = tint, modifier = Modifier.size(21.dp)) }
 }

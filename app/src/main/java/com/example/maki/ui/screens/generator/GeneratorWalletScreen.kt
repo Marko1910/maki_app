@@ -1,23 +1,23 @@
 package com.example.maki.ui.screens.generator
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Forest
 import androidx.compose.material.icons.filled.Smartphone
@@ -34,20 +34,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.maki.ui.components.IconBadge
+import com.example.maki.ui.components.makiScreen
 import com.example.maki.ui.components.DetailHeader
+import com.example.maki.ui.components.HeroCard
+import com.example.maki.ui.components.IconBadge
+import com.example.maki.ui.components.MakiEmpty
+import com.example.maki.ui.components.ProgressTrack
 import com.example.maki.ui.components.SectionLabel
-import com.example.maki.ui.components.makiShadow
+import com.example.maki.ui.components.StatusChip
+import com.example.maki.ui.components.makiCard
+import com.example.maki.ui.components.makiOutlined
 import com.example.maki.ui.theme.MAKITheme
 import com.example.maki.ui.theme.MakiColors
-import com.example.maki.ui.theme.MakiFont
+import com.example.maki.ui.theme.MakiRadius
+import com.example.maki.ui.theme.MakiSpace
+import com.example.maki.ui.theme.MakiType
 
 data class RedeemRow(val title: String, val date: String, val amount: String)
 
@@ -57,9 +64,13 @@ private val SampleWallet = WalletUi(
     progress = 0.85f,
     nextRedeemHint = "Faltan 750 pts para tu próximo canje de S/5.00",
     options = listOf(
-        RedeemOptionUi("cash", "Yape / Plin", "1,000 pts = S/1.00 · Mínimo S/5.00", suggested = true),
-        RedeemOptionUi("store_discount", "Descuento Tiendas Eco", "500 pts = 5% de descuento", suggested = false),
-        RedeemOptionUi("donation", "Donar a Reforestación", "200 pts = 1 árbol plantado", suggested = false),
+        RedeemOptionUi(kind = "cash", title = "Yape / Plin", rule = "1,000 pts = S/1.00 · Mínimo S/5.00", suggested = true),
+        RedeemOptionUi(
+            kind = "municipal_discount", code = "MUNI_ARBITRIOS", partner = "Municipalidad",
+            title = "Descuento en Arbitrios", rule = "1,000 pts = S/1.00 en tus arbitrios", suggested = false,
+        ),
+        RedeemOptionUi(kind = "store_discount", title = "Descuento Tiendas Eco", rule = "500 pts = 5% de descuento", suggested = false),
+        RedeemOptionUi(kind = "donation", title = "Donar a Reforestación", rule = "200 pts = 1 árbol plantado", suggested = false),
     ),
     history = listOf(
         RedeemHistoryUi("Yape S/5.00", "10 Jun", "−5,000 pts"),
@@ -78,29 +89,49 @@ fun GeneratorWalletScreen(
     var pending by remember { mutableStateOf<RedeemOptionUi?>(null) }
 
     Column(
-        Modifier.fillMaxSize().background(MakiColors.Bg).statusBarsPadding(),
+        Modifier.fillMaxSize().makiScreen().statusBarsPadding(),
     ) {
         DetailHeader("Mi Wallet", onBack)
-        Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState())
-                .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+        LazyColumn(
+            Modifier.weight(1f),
+            contentPadding = PaddingValues(
+                start = MakiSpace.gutter, end = MakiSpace.gutter,
+                top = MakiSpace.xs, bottom = MakiSpace.xl,
+            ),
+            verticalArrangement = Arrangement.spacedBy(MakiSpace.stack),
         ) {
-            BalanceHero(s)
-            SectionLabel("OPCIONES DE CANJE")
-            s.options.forEach { opt ->
-                val v = redeemVisual(opt.kind)
+            item { BalanceHero(s) }
+            item { SectionLabel("OPCIONES DE CANJE") }
+            if (s.options.isEmpty()) {
+                item {
+                    MakiEmpty(
+                        Icons.Filled.AccountBalanceWallet, "Aún no hay opciones de canje",
+                        accent = MakiColors.Gen,
+                    )
+                }
+            }
+            items(s.options) { opt ->
+                val v = redeemVisual(opt.code, opt.kind)
                 RedeemOption(
-                    v.icon, v.tint, v.bg, opt.title, opt.rule, suggested = opt.suggested,
+                    v.icon, v.tint, v.bg, opt.title, opt.rule, partner = opt.partner, suggested = opt.suggested,
                     actionLabel = if (opt.affordable) v.action else "Saldo insuficiente",
                     actionFilled = opt.affordable && v.filled,
                     enabled = opt.affordable,
                     onAction = { if (opt.affordable) pending = opt else onRedeem(opt) },
                 )
             }
-            if (s.history.isNotEmpty()) {
-                SectionLabel("HISTORIAL DE CANJES")
-                HistoryCard(s.history.map { RedeemRow(it.title, it.date, it.amount) })
+            item { SectionLabel("HISTORIAL DE CANJES") }
+            if (s.history.isEmpty()) {
+                item {
+                    MakiEmpty(
+                        Icons.Filled.AccountBalanceWallet, "Aún no tienes canjes",
+                        accent = MakiColors.Gen,
+                    )
+                }
+            } else {
+                items(s.history) { row ->
+                    HistoryCard(RedeemRow(row.title, row.date, row.amount))
+                }
             }
         }
     }
@@ -108,22 +139,35 @@ fun GeneratorWalletScreen(
     pending?.let { opt ->
         AlertDialog(
             onDismissRequest = { if (!busy) pending = null },
-            title = { Text("Confirmar canje", fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold) },
+            containerColor = MakiColors.Surface,
+            titleContentColor = MakiColors.Text,
+            textContentColor = MakiColors.Text2,
+            title = { Text("Confirmar canje", style = MakiType.sectionHeading) },
             text = {
                 Text(
                     "Vas a canjear ${"%,d".format(java.util.Locale.US, opt.cost)} Eco-Puntos por “${opt.title}”." +
                         if (opt.monetaryValue > 0) " Recibirás S/%.2f.".format(java.util.Locale.US, opt.monetaryValue) else "",
-                    fontFamily = MakiFont,
+                    style = MakiType.body,
                 )
             },
             confirmButton = {
-                TextButton(enabled = !busy, onClick = { onRedeem(opt); pending = null }) {
-                    Text(if (busy) "Procesando…" else "Canjear", color = MakiColors.Gen, fontFamily = MakiFont, fontWeight = FontWeight.Bold)
+                TextButton(
+                    enabled = !busy,
+                    modifier = Modifier.heightIn(min = MakiSpace.xl * 2 + MakiSpace.sm)
+                        .semantics { contentDescription = "Confirmar canje" },
+                    onClick = { onRedeem(opt); pending = null },
+                ) {
+                    Text(if (busy) "Procesando…" else "Canjear", color = if (busy) MakiColors.Text3 else MakiColors.Gen, style = MakiType.button)
                 }
             },
             dismissButton = {
-                TextButton(enabled = !busy, onClick = { pending = null }) {
-                    Text("Cancelar", color = MakiColors.Text2, fontFamily = MakiFont)
+                TextButton(
+                    enabled = !busy,
+                    modifier = Modifier.heightIn(min = MakiSpace.xl * 2 + MakiSpace.sm)
+                        .semantics { contentDescription = "Cancelar canje" },
+                    onClick = { pending = null },
+                ) {
+                    Text("Cancelar", color = if (busy) MakiColors.Text3 else MakiColors.Text2, style = MakiType.button)
                 }
             },
         )
@@ -134,44 +178,33 @@ private data class RedeemVisual(
     val icon: ImageVector, val tint: Color, val bg: Color, val action: String, val filled: Boolean,
 )
 
-private fun redeemVisual(kind: String): RedeemVisual = when (kind) {
-    "cash" -> RedeemVisual(Icons.Filled.Smartphone, MakiColors.Money, MakiColors.MoneyTint, "Canjear ahora", true)
-    "store_discount" -> RedeemVisual(Icons.Filled.Storefront, MakiColors.Gen, MakiColors.GenTint, "Ver tiendas", false)
-    "donation" -> RedeemVisual(Icons.Filled.Forest, MakiColors.Success, MakiColors.SuccessTint, "Donar", false)
+/**
+ * Styling by kind first, with the code as a fallback: MAKI works with the
+ * municipality, and a discount on your arbitrios is not the same offer as a
+ * shop coupon — the catalogue gives it its own kind. Matching the kind, and
+ * not just this one code, is what lets a second district arrive as a new
+ * code without losing the municipal treatment.
+ */
+private fun redeemVisual(code: String, kind: String): RedeemVisual = when {
+    kind == "municipal_discount" || code == "MUNI_ARBITRIOS" ->
+        RedeemVisual(Icons.Filled.AccountBalance, MakiColors.Rider, MakiColors.RiderTint, "Canjear descuento", true)
+    kind == "cash" -> RedeemVisual(Icons.Filled.Smartphone, MakiColors.Money, MakiColors.MoneyTint, "Canjear ahora", true)
+    kind == "store_discount" -> RedeemVisual(Icons.Filled.Storefront, MakiColors.Gen, MakiColors.GenTint, "Ver tiendas", false)
+    kind == "donation" -> RedeemVisual(Icons.Filled.Forest, MakiColors.Success, MakiColors.SuccessTint, "Donar", false)
     else -> RedeemVisual(Icons.Filled.Smartphone, MakiColors.Gen, MakiColors.GenTint, "Canjear", false)
 }
 
 @Composable
 private fun BalanceHero(s: WalletUi) {
-    Column(
-        Modifier
-            .makiShadow(22.dp, 10.dp, Color(0x400F6E56))
-            .clip(RoundedCornerShape(22.dp))
-            .background(Brush.linearGradient(listOf(MakiColors.Gen, MakiColors.GenDark)))
-            .fillMaxWidth()
-            .padding(22.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+    HeroCard(
+        accent = MakiColors.Gen,
+        overline = "SALDO DISPONIBLE",
+        metric = "%,d".format(java.util.Locale.US, s.balancePoints),
+        support = "Eco-Puntos",
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("Saldo disponible", color = MakiColors.OnDarkSoft, fontFamily = MakiFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                Text("%,d".format(java.util.Locale.US, s.balancePoints), color = Color.White, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 34.sp)
-                Text("Eco-Puntos", color = MakiColors.OnDarkSoft, fontFamily = MakiFont, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-            }
-            Row(
-                Modifier.clip(RoundedCornerShape(14.dp)).background(MakiColors.WhiteTint).padding(start = 11.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Filled.AccountBalanceWallet, null, tint = Color(0xFFFFE7B0), modifier = Modifier.size(16.dp))
-                Text(s.balanceCash, color = Color.White, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
-            }
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Color(0x2EFFFFFF))) {
-                Box(Modifier.fillMaxWidth(s.progress).height(8.dp).clip(RoundedCornerShape(4.dp)).background(Color.White))
-            }
-            Text(s.nextRedeemHint, color = MakiColors.OnDarkSoft, fontFamily = MakiFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-        }
+        Text(s.balanceCash, color = MakiColors.OnDark, style = MakiType.metricMedium)
+        ProgressTrack(s.progress)
+        Text(s.nextRedeemHint, color = MakiColors.OnGenSoft, style = MakiType.label)
     }
 }
 
@@ -183,6 +216,7 @@ private fun RedeemOption(
     title: String,
     rule: String,
     actionLabel: String,
+    partner: String = "",
     suggested: Boolean = false,
     actionFilled: Boolean = false,
     enabled: Boolean = true,
@@ -190,71 +224,60 @@ private fun RedeemOption(
 ) {
     Column(
         Modifier
-            .makiShadow(16.dp, 5.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(MakiColors.Surface)
-            .then(if (suggested) Modifier.border(1.5.dp, MakiColors.Gen, RoundedCornerShape(16.dp)) else Modifier)
+            .makiCard()
+            .then(if (suggested) Modifier.makiOutlined(MakiColors.Gen) else Modifier)
             .fillMaxWidth()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(13.dp),
+            .padding(MakiSpace.lg),
+        verticalArrangement = Arrangement.spacedBy(MakiSpace.md),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(icon, iconTint, iconBg, boxSize = 46.dp, iconSize = 24.dp, radius = 14.dp)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
-                Text(rule, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(MakiSpace.md), verticalAlignment = Alignment.CenterVertically) {
+            IconBadge(icon, iconTint, iconBg, boxSize = MakiSpace.xl * 2 + MakiSpace.sm, iconSize = MakiSpace.xl + MakiSpace.xs, radius = MakiRadius.badge)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(MakiSpace.xs)) {
+                Text(title, color = MakiColors.Text, style = MakiType.rowTitle)
+                Text(rule, color = MakiColors.Text2, style = MakiType.bodySmall)
+                if (partner.isNotBlank()) StatusChip(partner, iconTint)
             }
-            if (suggested) {
-                Box(Modifier.clip(RoundedCornerShape(10.dp)).background(MakiColors.GenTint).padding(horizontal = 9.dp, vertical = 4.dp)) {
-                    Text("SUGERIDO", color = MakiColors.Gen, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
-                }
-            }
+            if (suggested) StatusChip("SUGERIDO", MakiColors.Gen)
         }
         Row(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(MakiRadius.chip))
                 .background(
                     when {
                         !enabled -> MakiColors.Border
-                        actionFilled -> MakiColors.Gen
-                        else -> MakiColors.GenTint
+                        actionFilled -> iconTint
+                        else -> iconBg
                     }
                 )
-                .clickable(onClick = onAction).padding(vertical = 11.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                .clickable(enabled = enabled, onClickLabel = actionLabel, role = Role.Button, onClick = onAction)
+                .heightIn(min = MakiSpace.xl * 2 + MakiSpace.sm)
+                .padding(vertical = MakiSpace.md),
+            horizontalArrangement = Arrangement.spacedBy(MakiSpace.sm, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val c = when {
                 !enabled -> MakiColors.Text2
-                actionFilled -> Color.White
-                else -> MakiColors.Gen
+                actionFilled -> MakiColors.OnDark
+                else -> iconTint
             }
-            Text(actionLabel, color = c, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            if (enabled) Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = c, modifier = Modifier.size(17.dp))
+            Text(actionLabel, color = c, style = MakiType.button)
+            if (enabled) Icon(Icons.AutoMirrored.Filled.ArrowForward, null, tint = c, modifier = Modifier.size(MakiSpace.lg))
         }
     }
 }
 
 @Composable
-private fun HistoryCard(rows: List<RedeemRow>) {
-    Column(
-        Modifier.makiShadow(16.dp, 5.dp).clip(RoundedCornerShape(16.dp)).background(MakiColors.Surface)
-            .fillMaxWidth().padding(horizontal = 16.dp),
+private fun HistoryCard(row: RedeemRow) {
+    Row(
+        Modifier.fillMaxWidth().makiCard().padding(MakiSpace.lg),
+        horizontalArrangement = Arrangement.spacedBy(MakiSpace.md),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        rows.forEachIndexed { i, r ->
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconBadge(Icons.Filled.Smartphone, MakiColors.Money, Color(0x0FBA7517), boxSize = 36.dp, iconSize = 18.dp, radius = 18.dp)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                    Text(r.title, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Text(r.date, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 12.sp)
-                }
-                Text(r.amount, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
-            }
-            if (i < rows.lastIndex) Box(Modifier.fillMaxWidth().height(1.dp).background(MakiColors.Border))
+        IconBadge(Icons.Filled.Smartphone, MakiColors.Money, MakiColors.MoneyTint)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(MakiSpace.xs)) {
+            Text(row.title, color = MakiColors.Text, style = MakiType.rowTitle)
+            Text(row.date, color = MakiColors.Text2, style = MakiType.label)
         }
+        Text(row.amount, color = MakiColors.Text2, style = MakiType.rowTitle)
     }
 }
 

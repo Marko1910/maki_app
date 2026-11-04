@@ -1,38 +1,36 @@
 package com.example.maki.ui.screens.auth
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsBike
 import androidx.compose.material.icons.filled.Apartment
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.maki.ui.components.makiShadow
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
+import com.example.maki.ui.components.makiScreen
+import com.example.maki.ui.components.NavRow
+import com.example.maki.ui.components.SectionLabel
+import com.example.maki.ui.components.makiHero
+import com.example.maki.ui.theme.MAKITheme
 import com.example.maki.ui.theme.MakiColors
-import com.example.maki.ui.theme.MakiFont
+import com.example.maki.ui.theme.MakiGradient
+import com.example.maki.ui.theme.MakiSpace
+import com.example.maki.ui.theme.MakiType
 
 @Composable
 fun RoleSelectScreen(
@@ -42,48 +40,45 @@ fun RoleSelectScreen(
     onInfo: (String) -> Unit = {},
 ) {
     Column(
-        Modifier.fillMaxSize().background(MakiColors.Bg).statusBarsPadding()
-            .padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 28.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        Modifier.fillMaxSize().makiScreen().statusBarsPadding().navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = MakiSpace.gutter, vertical = MakiSpace.xxl),
+        verticalArrangement = Arrangement.spacedBy(MakiSpace.stack),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Bienvenido a Maki", color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp)
-            Text("Elige tu rol para crear tu cuenta", color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 15.sp)
+        Column(
+            Modifier.fillMaxWidth()
+                .makiHero(MakiGradient.genDeep, glow = MakiGradient.glowOf(MakiColors.Gen))
+                .padding(MakiSpace.xl),
+            verticalArrangement = Arrangement.spacedBy(MakiSpace.sm),
+        ) {
+            Text("Bienvenido a Ruma", color = MakiColors.OnDark, style = MakiType.screenTitle)
+            Text("Elige tu rol para crear tu cuenta", color = MakiColors.OnGenSoft, style = MakiType.body)
         }
-        Box(Modifier.size(4.dp))
-        RoleCard(Icons.Filled.Home, MakiColors.Gen, "Generador", "Reciclo en casa y gano puntos", onClick = onGenerator)
-        RoleCard(Icons.AutoMirrored.Filled.DirectionsBike, MakiColors.Rider, "Eco-Rider", "Recolecto y gano por ruta",
-            onClick = onRider)
-        RoleCard(Icons.Filled.Apartment, MakiColors.Admin, "Centro de Acopio", "Gestiono la operación",
+        SectionLabel("Tu rol", Modifier.padding(top = MakiSpace.md))
+        NavRow(Icons.Filled.Home, "Eco-Hero", "Reciclo donde vivo y gano puntos",
+            accent = MakiColors.Gen, onClick = onGenerator)
+        NavRow(Icons.AutoMirrored.Filled.DirectionsBike, "Eco-Rider", "Recojo reciclaje y gano dinero",
+            accent = MakiColors.Rider, onClick = onRider)
+        NavRow(Icons.Filled.Apartment, "Centro de Acopio", "Gestiono la operación",
+            accent = MakiColors.Admin,
             onClick = { onInfo("El panel de Centro de Acopio estará disponible pronto.") })
-        Box(Modifier.weight(1f))
-        Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.Center) {
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text("Ya tengo cuenta", color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                Text("Iniciar sesión", color = MakiColors.Gen, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp,
-                    modifier = Modifier.clickable(onClick = onLogin))
-            }
+        Column(
+            Modifier.fillMaxWidth().padding(top = MakiSpace.xl),
+            verticalArrangement = Arrangement.spacedBy(MakiSpace.xs),
+        ) {
+            Text("Ya tengo cuenta", color = MakiColors.Text2, style = MakiType.body,
+                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            Text("Iniciar sesión", color = MakiColors.Gen, style = MakiType.button,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+                    .clickable(onClickLabel = "Iniciar sesión", role = Role.Button, onClick = onLogin)
+                    .heightIn(min = MakiSpace.xl + MakiSpace.xxl).padding(MakiSpace.md))
         }
     }
 }
 
+@Preview(showBackground = true, widthDp = 390, heightDp = 844)
 @Composable
-private fun RoleCard(icon: ImageVector, accent: Color, title: String, subtitle: String, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().makiShadow(20.dp, 4.dp, accent.copy(alpha = 0.12f)).clip(RoundedCornerShape(20.dp))
-            .background(MakiColors.Surface).border(1.5.dp, accent.copy(alpha = 0.2f), RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick).padding(18.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier.size(60.dp).clip(RoundedCornerShape(18.dp))
-                .background(Brush.linearGradient(listOf(accent, accent.copy(alpha = 0.8f)))),
-            contentAlignment = Alignment.Center,
-        ) { Icon(icon, null, tint = Color.White, modifier = Modifier.size(30.dp)) }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, color = accent, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
-            Text(subtitle, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-        }
-        Icon(Icons.Filled.ChevronRight, null, tint = accent, modifier = Modifier.size(22.dp))
-    }
+private fun RoleSelectPreview() {
+    MAKITheme { RoleSelectScreen() }
 }

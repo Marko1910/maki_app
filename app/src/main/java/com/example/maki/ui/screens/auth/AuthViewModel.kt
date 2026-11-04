@@ -88,11 +88,27 @@ class AuthViewModel : ViewModel() {
             val splash = launch { delay(1100) }
             val next = when {
                 !MakiPrefs.onboardingSeen -> AppRoutes.ONBOARDING
-                runCatching { MakiRepository.restoreSession() }.getOrDefault(false) -> homeRoute()
+                runCatching { MakiRepository.restoreSession() }.getOrDefault(false) -> {
+                    refreshRole()
+                    homeRoute()
+                }
                 else -> AppRoutes.LOGIN
             }
             splash.join()
             onResult(next)
+        }
+    }
+
+    /**
+     * The account's real role, from the database. The destination used to come
+     * from the role picked on the sign-up screen (a local pref, "generador" by
+     * default), so a rider logging in landed in the family's app. Offline, the
+     * last known role stands.
+     */
+    private suspend fun refreshRole() {
+        runCatching { MakiRepository.loadMyRole() }.getOrNull()?.let {
+            role = it
+            MakiPrefs.role = it
         }
     }
 
@@ -114,12 +130,21 @@ class AuthViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 MakiRepository.signIn(email.trim(), password)
-                onSuccess()
             } catch (e: Exception) {
                 error = "Correo o contraseña incorrectos."
-            } finally {
                 loading = false
+                return@launch
             }
+            refreshRole()
+            loading = false
+            if (role == "operador") {
+                // There is no acopio console in this app; an operator would land
+                // in a family's screens showing nobody's data.
+                MakiRepository.signOut()
+                error = "Esta app es para vecinos y Eco-Riders. Los operadores usan la consola del centro de acopio."
+                return@launch
+            }
+            onSuccess()
         }
     }
 

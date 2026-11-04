@@ -56,19 +56,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.maki.data.ChatConversationDto
 import com.example.maki.data.ChatTurnDto
 import com.example.maki.data.MakiRepository
+import com.example.maki.ui.components.makiScreen
+import com.example.maki.ui.theme.MakiGradient
 import com.example.maki.ui.components.makiShadow
 import com.example.maki.ui.theme.MAKITheme
 import com.example.maki.ui.theme.MakiColors
-import com.example.maki.ui.theme.MakiFont
+import com.example.maki.ui.theme.MakiType
 import kotlinx.coroutines.launch
 
 private data class ChatMsg(val fromUser: Boolean, val text: String)
@@ -127,7 +127,7 @@ fun GeneratorChatScreen(onBack: () -> Unit = {}, onInfo: (String) -> Unit = {}) 
         snapshotFlow { scroll.maxValue }.collect { scroll.animateScrollTo(it) }
     }
 
-    Column(Modifier.fillMaxSize().background(MakiColors.Bg).statusBarsPadding().imePadding()) {
+    Column(Modifier.fillMaxSize().makiScreen().statusBarsPadding().imePadding()) {
         ChatHeader(
             onBack = onBack,
             onHistory = {
@@ -146,17 +146,17 @@ fun GeneratorChatScreen(onBack: () -> Unit = {}, onInfo: (String) -> Unit = {}) 
         ) {
             ChatMapCard()
             MakiBubble {
-                Text("¡Hola! Soy Maki, tu agente de reciclaje. ¿En qué te ayudo hoy?", color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp)
-                Text("Pregúntame sobre clasificación, puntos de acopio y más.", color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp)
+                Text("¡Hola! Soy Ruma, tu agente de reciclaje. ¿En qué te ayudo hoy?", color = MakiColors.Text, style = MakiType.body)
+                Text("Pregúntame sobre clasificación, puntos de acopio y más.", color = MakiColors.Text2, style = MakiType.body)
             }
             messages.forEach { msg ->
                 if (msg.fromUser) UserBubble(msg.text)
                 else MakiBubble {
-                    Text(msg.text, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp)
+                    Text(msg.text, color = MakiColors.Text, style = MakiType.body)
                 }
             }
             if (thinking) MakiBubble {
-                Text("Maki está escribiendo…", color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                Text("Ruma está escribiendo…", color = MakiColors.Text2, style = MakiType.body)
             }
         }
         QuickReplies(onPick = { send(it) })
@@ -188,13 +188,13 @@ private fun ChatHistorySheet(
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MakiColors.Surface) {
         Text(
             "Conversaciones",
-            color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp,
+            color = MakiColors.Text, style = MakiType.sectionHeading,
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 6.dp),
         )
         if (conversations.isEmpty()) {
             Text(
                 "Aún no tienes conversaciones guardadas.",
-                color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 14.sp,
+                color = MakiColors.Text2, style = MakiType.body,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp),
             )
         } else {
@@ -208,12 +208,12 @@ private fun ChatHistorySheet(
                     ) {
                         Text(
                             c.title ?: "Conversación",
-                            color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                            color = MakiColors.Text, style = MakiType.rowTitle,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             (c.last_message_at ?: c.created_at).take(10),
-                            color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 12.sp,
+                            color = MakiColors.Text2, style = MakiType.caption,
                         )
                     }
                 }
@@ -233,7 +233,7 @@ private fun makiReply(q: String): String {
         "color" in t || "contenedor" in t -> "En Perú: amarillo (plásticos/tetra), verde (vidrio), azul (papel/cartón), y puntos especiales para peligrosos."
         "pet" in t || "botella" in t -> "El PET (botellas) va al contenedor amarillo. Vacíalo, enjuágalo y aplástalo."
         "carton" in t || "cartón" in t || "papel" in t -> "Papel y cartón van al contenedor AZUL, secos y sin grasa."
-        "hola" in t || "buenas" in t -> "¡Hola! Soy Maki. Pregúntame sobre cómo clasificar tus residuos."
+        "hola" in t || "buenas" in t -> "¡Hola! Soy Ruma. Pregúntame sobre cómo clasificar tus residuos."
         "gracias" in t -> "¡De nada! Sigue reciclando para sumar Eco-Puntos."
         else -> "Buena pregunta. En general: separa por material (plástico, vidrio, papel, metal) y mantenlos limpios y secos. ¿Sobre qué material quieres saber más?"
     }
@@ -249,13 +249,13 @@ private fun ChatHeader(onBack: () -> Unit, onHistory: () -> Unit = {}, onNewChat
             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Atrás", tint = MakiColors.Text, modifier = Modifier.size(20.dp))
         }
         Box(Modifier.size(42.dp).clip(CircleShape).background(MakiColors.Gen), contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.Eco, null, tint = Color.White, modifier = Modifier.size(22.dp))
+            Icon(Icons.Filled.Eco, null, tint = MakiColors.OnDark, modifier = Modifier.size(22.dp))
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("Maki · Agente Educativo", color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+            Text("Ruma · Agente Educativo", color = MakiColors.Text, style = MakiType.sectionHeading)
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(7.dp).clip(CircleShape).background(MakiColors.Success))
-                Text("En línea", color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                Text("En línea", color = MakiColors.Text2, style = MakiType.label)
             }
         }
         Icon(
@@ -273,19 +273,19 @@ private fun ChatHeader(onBack: () -> Unit, onHistory: () -> Unit = {}, onNewChat
 
 @Composable
 private fun ChatMapCard() {
-    Box(Modifier.fillMaxWidth().height(104.dp).clip(RoundedCornerShape(16.dp)).background(Color(0xFFDDE6E1))) {
-        Box(Modifier.align(Alignment.Center).offset(x = (-90).dp, y = 12.dp).size(30.dp).clip(CircleShape).border(2.dp, Color.White, CircleShape).background(MakiColors.Rider), contentAlignment = Alignment.Center) {
-            Icon(Icons.AutoMirrored.Filled.DirectionsBike, null, tint = Color.White, modifier = Modifier.size(16.dp))
+    Box(Modifier.fillMaxWidth().height(104.dp).clip(RoundedCornerShape(16.dp)).background(MakiColors.Border)) {
+        Box(Modifier.align(Alignment.Center).offset(x = (-90).dp, y = 12.dp).size(30.dp).clip(CircleShape).border(2.dp, MakiColors.OnDark, CircleShape).background(MakiColors.Rider), contentAlignment = Alignment.Center) {
+            Icon(Icons.AutoMirrored.Filled.DirectionsBike, null, tint = MakiColors.OnDark, modifier = Modifier.size(16.dp))
         }
-        Box(Modifier.align(Alignment.Center).offset(x = 110.dp, y = (-25).dp).size(28.dp).clip(CircleShape).border(2.dp, Color.White, CircleShape).background(MakiColors.Gen), contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.Place, null, tint = Color.White, modifier = Modifier.size(15.dp))
+        Box(Modifier.align(Alignment.Center).offset(x = 110.dp, y = (-25).dp).size(28.dp).clip(CircleShape).border(2.dp, MakiColors.OnDark, CircleShape).background(MakiColors.Gen), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.Place, null, tint = MakiColors.OnDark, modifier = Modifier.size(15.dp))
         }
         Row(
-            Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xF2FFFFFF)).padding(start = 8.dp, end = 10.dp, top = 5.dp, bottom = 5.dp),
+            Modifier.align(Alignment.TopStart).padding(10.dp).clip(RoundedCornerShape(12.dp)).background(MakiColors.Surface).padding(start = 8.dp, end = 10.dp, top = 5.dp, bottom = 5.dp),
             horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(Icons.Filled.Navigation, null, tint = MakiColors.Rider, modifier = Modifier.size(13.dp))
-            Text("Rider a 2 cuadras", color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text("Rider a 2 cuadras", color = MakiColors.Text, style = MakiType.chip)
         }
     }
 }
@@ -294,7 +294,7 @@ private fun ChatMapCard() {
 private fun MakiBubble(content: @Composable ColumnScope.() -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
         Box(Modifier.size(30.dp).clip(CircleShape).background(MakiColors.Gen), contentAlignment = Alignment.Center) {
-            Icon(Icons.Filled.Eco, null, tint = Color.White, modifier = Modifier.size(15.dp))
+            Icon(Icons.Filled.Eco, null, tint = MakiColors.OnDark, modifier = Modifier.size(15.dp))
         }
         Column(
             Modifier.widthIn(max = 286.dp).makiShadow(16.dp, 3.dp)
@@ -312,7 +312,7 @@ private fun UserBubble(text: String) {
             Modifier.widthIn(max = 250.dp).clip(RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomEnd = 16.dp, bottomStart = 16.dp))
                 .background(MakiColors.Gen).padding(horizontal = 14.dp, vertical = 12.dp),
         ) {
-            Text(text, color = Color.White, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp)
+            Text(text, color = MakiColors.OnDark, style = MakiType.body)
         }
     }
 }
@@ -330,7 +330,7 @@ private fun QuickReplies(onPick: (String) -> Unit) {
                     .clickable { onPick(it) }
                     .padding(horizontal = 13.dp, vertical = 8.dp),
             ) {
-                Text(it, color = MakiColors.Gen, fontFamily = MakiFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Text(it, color = MakiColors.Gen, style = MakiType.label)
             }
         }
     }
@@ -348,13 +348,13 @@ private fun ChatInputBar(value: String, onValueChange: (String) -> Unit, onSend:
         ) {
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                 if (value.isEmpty()) {
-                    Text("Escribe tu duda...", color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                    Text("Escribe tu duda...", color = MakiColors.Text2, style = MakiType.body)
                 }
                 BasicTextField(
                     value = value,
                     onValueChange = onValueChange,
                     singleLine = true,
-                    textStyle = TextStyle(color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 14.sp),
+                    textStyle = MakiType.body.copy(color = MakiColors.Text),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = { onSend() }),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(MakiColors.Gen),
@@ -364,10 +364,10 @@ private fun ChatInputBar(value: String, onValueChange: (String) -> Unit, onSend:
             Icon(Icons.Filled.Mic, "Dictar", tint = MakiColors.Text2, modifier = Modifier.size(19.dp).clickable(onClick = onMic))
         }
         Box(
-            Modifier.makiShadow(24.dp, 4.dp, Color(0x400F6E56)).size(48.dp).clip(CircleShape).background(MakiColors.Gen).clickable(onClick = onSend),
+            Modifier.makiShadow(24.dp, 4.dp, MakiGradient.glowOf(MakiColors.Gen)).size(48.dp).clip(CircleShape).background(MakiColors.Gen).clickable(onClick = onSend),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.AutoMirrored.Filled.Send, "Enviar", tint = Color.White, modifier = Modifier.size(21.dp))
+            Icon(Icons.AutoMirrored.Filled.Send, "Enviar", tint = MakiColors.OnDark, modifier = Modifier.size(21.dp))
         }
     }
 }

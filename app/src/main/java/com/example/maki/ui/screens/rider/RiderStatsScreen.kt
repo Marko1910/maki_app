@@ -36,14 +36,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.maki.ui.theme.MakiRadius
+import com.example.maki.ui.components.makiCard
+import com.example.maki.ui.components.makiScreen
+import com.example.maki.ui.theme.MakiGradient
 import com.example.maki.ui.components.makiShadow
 import com.example.maki.ui.theme.MAKITheme
 import com.example.maki.ui.theme.MakiColors
-import com.example.maki.ui.theme.MakiFont
+import com.example.maki.ui.theme.MakiType
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -65,9 +67,9 @@ data class RiderStatsUiState(
     val weeklyTotal: String = "",
 )
 
-private val BarInactive = Color(0xFFD5DEEA)
-private val LockedBg = Color(0xFFE7EBE9)
-private val LockedIcon = Color(0xFFA6B0AB)
+private val BarInactive = MakiColors.Border
+private val LockedBg = MakiColors.Border
+private val LockedIcon = MakiColors.Text3
 /**
  * The rider's own totals from `rider_profiles`, a 7-day pickup chart built from
  * `rider_earnings`, and unlocked badges from `user_achievements`. Nothing here is
@@ -80,7 +82,7 @@ fun RiderStatsScreen(
     onBack: () -> Unit = {},
     onRetry: () -> Unit = {},
 ) {
-    Column(Modifier.fillMaxSize().background(MakiColors.Bg).statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().makiScreen().statusBarsPadding()) {
         DetailHeader(title = "Mis Estadísticas", onBack = onBack)
 
         LazyColumn(
@@ -102,7 +104,7 @@ fun RiderStatsScreen(
                         }
                     }
                     item { ChartCard(state) }
-                    item { Text("INSIGNIAS", color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                    item { Text("INSIGNIAS", color = MakiColors.Text2, style = MakiType.chip) }
                     item {
                         if (state.badges.isEmpty()) {
                             MakiEmpty(
@@ -123,7 +125,7 @@ fun RiderStatsScreen(
 @Composable
 private fun StatTile(modifier: Modifier, t: StatTileUi) {
     Row(
-        modifier.makiShadow(14.dp, 4.dp).clip(RoundedCornerShape(14.dp)).background(MakiColors.Surface).padding(14.dp)
+        modifier.makiCard(MakiRadius.badge).padding(14.dp)
             .clearAndSetSemantics { contentDescription = t.value + " " + t.label },
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -132,8 +134,8 @@ private fun StatTile(modifier: Modifier, t: StatTileUi) {
             contentAlignment = Alignment.Center,
         ) { Icon(t.icon, null, tint = t.tint, modifier = Modifier.size(20.dp)) }
         Column {
-            Text(t.value, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-            Text(t.label, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 11.sp)
+            Text(t.value, color = MakiColors.Text, style = MakiType.sectionHeading)
+            Text(t.label, color = MakiColors.Text2, style = MakiType.caption)
         }
     }
 }
@@ -141,13 +143,16 @@ private fun StatTile(modifier: Modifier, t: StatTileUi) {
 @Composable
 private fun ChartCard(state: RiderStatsUiState) {
     Column(
-        Modifier.makiShadow(16.dp, 5.dp).clip(RoundedCornerShape(16.dp)).background(MakiColors.Surface).fillMaxWidth().padding(16.dp),
+        Modifier.makiCard().fillMaxWidth().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(state.chartTitle, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(
+                state.chartTitle, color = MakiColors.Text, style = MakiType.rowTitle,
+                modifier = Modifier.weight(1f),
+            )
             if (state.weeklyTotal.isNotBlank()) {
-                Text(state.weeklyTotal, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                Text(state.weeklyTotal, color = MakiColors.Text2, style = MakiType.label)
             }
         }
         Row(
@@ -168,10 +173,10 @@ private fun ChartCard(state: RiderStatsUiState) {
                     Text(
                         bar.value,
                         color = if (bar.active) MakiColors.Rider else MakiColors.Text2,
-                        fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 11.sp,
+                        style = MakiType.overline,
                     )
                     Box(Modifier.fillMaxWidth().height(bar.heightDp.dp).clip(RoundedCornerShape(6.dp)).background(if (bar.active) MakiColors.Rider else BarInactive))
-                    Text(bar.label, color = if (bar.active) MakiColors.Rider else MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    Text(bar.label, color = if (bar.active) MakiColors.Rider else MakiColors.Text2, style = MakiType.overline)
                 }
             }
         }
@@ -196,11 +201,11 @@ private fun BadgesRow(badges: List<StatBadgeUi>) {
             ) {
                 Box(
                     Modifier
-                        .then(if (!b.locked) Modifier.makiShadow(27.dp, 4.dp, Color(0x40185FA5)) else Modifier)
+                        .then(if (!b.locked) Modifier.makiShadow(27.dp, 4.dp, MakiGradient.glowOf(MakiColors.Rider)) else Modifier)
                         .size(54.dp).clip(CircleShape).background(if (b.locked) LockedBg else MakiColors.Rider),
                     contentAlignment = Alignment.Center,
-                ) { Icon(b.icon, null, tint = if (b.locked) LockedIcon else Color.White, modifier = Modifier.size(24.dp)) }
-                Text(b.label, color = if (b.locked) MakiColors.Text2 else MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.SemiBold, fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2)
+                ) { Icon(b.icon, null, tint = if (b.locked) LockedIcon else MakiColors.OnDark, modifier = Modifier.size(24.dp)) }
+                Text(b.label, color = if (b.locked) MakiColors.Text2 else MakiColors.Text, style = MakiType.caption, textAlign = TextAlign.Center, maxLines = 2)
             }
         }
         // Keep the last, partially filled row aligned left instead of stretched.

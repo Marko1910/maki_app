@@ -6,6 +6,7 @@ object GenRoutes {
     const val CAMERA = "gen/camera"
     const val RESULT = "gen/result"
     const val CHAT = "gen/chat"
+    const val MARKET = "gen/market"
     const val PROFILE = "gen/profile"
 
     const val PICKUP = "gen/pickup"
@@ -15,8 +16,13 @@ object GenRoutes {
     const val TRACKING = "gen/tracking"
     const val HISTORY = "gen/history"
     const val NOTIFICATIONS = "gen/notifications"
+    const val EDIT_PROFILE = "gen/edit-profile"
 
     // Tabbed screens that keep the bottom navigation bar visible.
     // Cámara and Chat are immersive (own back/close), so the bar hides there.
-    val bottomBarRoutes = setOf(HOME, PROFILE)
+    val bottomBarRoutes = setOf(HOME, MARKET, PROFILE)
+
+    // Full-bleed screens that lay their own content around the system bars; every
+    // other screen without the bottom bar gets the navigation-bar inset from the Root.
+    val edgeToEdgeRoutes = setOf(CAMERA)
 }

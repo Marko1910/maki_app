@@ -35,14 +35,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.maki.ui.components.makiCard
+import com.example.maki.ui.components.makiScreen
 import com.example.maki.ui.components.makiShadow
 import com.example.maki.ui.theme.MAKITheme
 import com.example.maki.ui.theme.MakiColors
-import com.example.maki.ui.theme.MakiFont
+import com.example.maki.ui.theme.MakiType
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -53,12 +53,12 @@ import com.example.maki.ui.components.MakiEmpty
 import com.example.maki.ui.components.MakiError
 import com.example.maki.ui.components.MakiLoading
 
-internal val Gold = Color(0xFFE0A41B)
-internal val Silver = Color(0xFF9CA3AF)
-internal val Bronze = Color(0xFFC58B5B)
-private val TabsBg = Color(0x0D185FA5)
-private val PodiumYouBg = Color(0x12185FA5)
-private val PremiosBg = Color(0x0FBA7517)
+internal val Gold = MakiColors.Gold
+internal val Silver = MakiColors.Silver
+internal val Bronze = MakiColors.Bronze
+private val TabsBg = MakiColors.RiderTint
+private val PodiumYouBg = MakiColors.RiderTint
+private val PremiosBg = MakiColors.MoneyTint
 
 data class PodiumUi(
     val rank: Int,
@@ -97,7 +97,7 @@ fun RiderRankingScreen(
     onBack: () -> Unit = {},
     onRetry: () -> Unit = {},
 ) {
-    Column(Modifier.fillMaxSize().background(MakiColors.Bg).statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().makiScreen().statusBarsPadding()) {
         DetailHeader(
             title = state?.zone ?: "Ranking de riders",
             onBack = onBack,
@@ -123,8 +123,7 @@ fun RiderRankingScreen(
                         item {
                             Text(
                                 state.periodLabel,
-                                color = MakiColors.Text2, fontFamily = MakiFont,
-                                fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                                color = MakiColors.Text2, style = MakiType.label,
                             )
                         }
                     }
@@ -160,7 +159,7 @@ private fun PodiumCard(p: PodiumUi) {
             PodiumContent(p, Modifier.weight(1f).padding(14.dp))
         }
     } else {
-        Box(Modifier.makiShadow(16.dp, 5.dp).clip(RoundedCornerShape(16.dp)).background(MakiColors.Surface).border(1.5.dp, p.medalColor, RoundedCornerShape(16.dp)).fillMaxWidth()) {
+        Box(Modifier.makiCard().border(1.5.dp, p.medalColor, RoundedCornerShape(16.dp)).fillMaxWidth()) {
             PodiumContent(p, Modifier.padding(14.dp))
         }
     }
@@ -179,26 +178,34 @@ private fun PodiumContent(p: PodiumUi, modifier: Modifier) {
             Box(
                 Modifier.size(40.dp).clip(CircleShape).background(p.medalColor),
                 contentAlignment = Alignment.Center,
-            ) { Text("${p.rank}", color = Color.White, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp) }
+            ) { Text("${p.rank}", color = MakiColors.OnDark, style = MakiType.sectionHeading) }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(p.name, color = if (p.isYou) MakiColors.Rider else MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                    Text(p.name, color = if (p.isYou) MakiColors.Rider else MakiColors.Text, style = MakiType.sectionHeading)
                     if (p.crown) Icon(Icons.Filled.WorkspacePremium, null, tint = MakiColors.Money, modifier = Modifier.size(16.dp))
                     if (p.isYou) Box(
                         Modifier.clip(RoundedCornerShape(8.dp)).background(MakiColors.Rider).padding(horizontal = 7.dp, vertical = 2.dp),
-                    ) { Text("Tú", color = Color.White, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 11.sp) }
+                    ) { Text("Tú", color = MakiColors.OnDark, style = MakiType.overline) }
                 }
-                Text(p.sub, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+                Text(p.sub, color = MakiColors.Text2, style = MakiType.caption)
             }
-            Text(p.points, color = if (p.isYou) MakiColors.Rider else MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+            Text(p.points, color = if (p.isYou) MakiColors.Rider else MakiColors.Text, style = MakiType.sectionHeading)
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.AccountBalanceWallet, null, tint = MakiColors.Money, modifier = Modifier.size(13.dp))
-                Text(p.monthEarnings, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            }
-            p.gap?.let {
-                Text(it, color = MakiColors.Rider, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        // Both halves are optional: an empty week and the leader's own row have
+        // nothing to say here, and an empty line looks like missing data.
+        if (p.monthEarnings.isNotBlank() || p.gap != null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                if (p.monthEarnings.isNotBlank()) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.AccountBalanceWallet, null, tint = MakiColors.Money, modifier = Modifier.size(13.dp))
+                        Text(p.monthEarnings, color = MakiColors.Text, style = MakiType.chip)
+                    }
+                } else {
+                    Box(Modifier)
+                }
+                p.gap?.let {
+                    Text(it, color = MakiColors.Rider, style = MakiType.chip)
+                }
             }
         }
     }
@@ -210,19 +217,18 @@ private fun RankRow(r: RankRowUi) {
         Modifier.fillMaxWidth().padding(vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("${r.rank}", color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.width(22.dp))
+        Text("${r.rank}", color = MakiColors.Text2, style = MakiType.cardTitle, textAlign = TextAlign.Center, modifier = Modifier.width(22.dp))
         Box(
             Modifier.size(34.dp).clip(CircleShape).background(MakiColors.RiderTint),
             contentAlignment = Alignment.Center,
-        ) { Text(r.initial, color = MakiColors.Rider, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp) }
+        ) { Text(r.initial, color = MakiColors.Rider, style = MakiType.chip) }
         Text(
             if (r.isYou) "${r.name} · Tú" else r.name,
             color = if (r.isYou) MakiColors.Rider else MakiColors.Text,
-            fontFamily = MakiFont,
-            fontWeight = if (r.isYou) FontWeight.ExtraBold else FontWeight.Bold,
-            fontSize = 14.sp, modifier = Modifier.weight(1f),
+            style = if (r.isYou) MakiType.cardTitle else MakiType.rowTitle,
+            modifier = Modifier.weight(1f),
         )
-        Text(r.points, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+        Text(r.points, color = MakiColors.Text, style = MakiType.cardTitle)
     }
 }
 
@@ -234,13 +240,13 @@ private fun PremiosCard(state: RiderRankingUiState) {
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.CardGiftcard, null, tint = MakiColors.Money, modifier = Modifier.size(18.dp))
-            Text("Premios del ranking", color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Text("Premios del ranking", color = MakiColors.Text, style = MakiType.cardTitle, modifier = Modifier.weight(1f))
             Icon(Icons.Filled.ExpandMore, null, tint = MakiColors.Text2, modifier = Modifier.size(18.dp))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             state.prizes.forEach { PrizeCard(Modifier.weight(1f), it) }
         }
-        Text(state.prizeNote, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        Text(state.prizeNote, color = MakiColors.Text2, style = MakiType.label)
     }
 }
 
@@ -253,8 +259,8 @@ private fun PrizeCard(modifier: Modifier, p: PrizeUi) {
         Box(
             Modifier.size(26.dp).clip(CircleShape).background(p.medalColor),
             contentAlignment = Alignment.Center,
-        ) { Text("${p.rank}", color = Color.White, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp) }
-        Text(p.value, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+        ) { Text("${p.rank}", color = MakiColors.OnDark, style = MakiType.chip) }
+        Text(p.value, color = MakiColors.Text, style = MakiType.cardTitle)
     }
 }
 

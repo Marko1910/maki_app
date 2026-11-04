@@ -6,19 +6,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Eco
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Place
@@ -27,147 +28,176 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.maki.ui.components.BackButton
+import com.example.maki.ui.components.makiScreen
+import com.example.maki.ui.components.DetailHeader
+import com.example.maki.ui.components.HeroCard
+import com.example.maki.ui.components.MakiEmpty
+import com.example.maki.ui.components.MakiLoading
+import com.example.maki.ui.components.MetricTile
 import com.example.maki.ui.components.OsmMap
 import com.example.maki.ui.components.OsmMarker
 import com.example.maki.ui.components.PrimaryButton
-import com.example.maki.ui.components.makiShadow
+import com.example.maki.ui.components.SecondaryButton
+import com.example.maki.ui.components.SectionLabel
+import com.example.maki.ui.components.StatusChip
 import com.example.maki.ui.theme.MAKITheme
 import com.example.maki.ui.theme.MakiColors
-import com.example.maki.ui.theme.MakiFont
+import com.example.maki.ui.theme.MakiRadius
+import com.example.maki.ui.theme.MakiSpace
+import com.example.maki.ui.theme.MakiType
 import org.osmdroid.util.GeoPoint
 
 private val SampleTracking = TrackingUi(
     headerTitle = "Tu Eco-Rider está llegando",
     riderLine = "Carlos · Moto · ★ 4.8",
-    etaText = "A 3 cuadras · ~5 min",
+    etaText = "~5 min",
     itemsText = "8 PET + 2 latas",
-    statusMessage = "Carlos ya salió. Llega en ~5 min. ¡Ten listos tus residuos!",
+    statusMessage = "Carlos va en camino. Míralo acercarse en el mapa.",
+    distanceText = "A 900 m",
+    canCancel = true,
+    riderPhone = "+51987650010",
 )
 
+/**
+ * Live view of the family's pickup: the house, the rider and the street path
+ * between them, re-read every few seconds by [com.example.maki.navigation.GeneratorRoot].
+ * The family can call the rider or cancel before they reach the door — closing
+ * the pickup is the rider's job, never the family's.
+ */
 @Composable
 fun GeneratorTrackingScreen(
     state: TrackingUi? = null,
     busy: Boolean = false,
     onBack: () -> Unit = {},
-    onComplete: () -> Unit = {},
-    onCall: (() -> Unit)? = null,
+    onCancel: () -> Unit = {},
 ) {
-    val s = state ?: SampleTracking
-    val context = LocalContext.current
-    val call: () -> Unit = onCall ?: {
-        runCatching {
-            context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:+51999888777")))
-        }
-        Unit
-    }
-    Column(Modifier.fillMaxSize().background(MakiColors.Bg).statusBarsPadding()) {
-        // Header
-        Row(
-            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BackButton(onBack)
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(s.headerTitle, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-                Text(s.riderLine, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-            }
-        }
-
-        // Live map: the family's door and the rider closing in on it. Falls back to
-        // the flat placeholder while we have no coordinates (an address typed by
-        // hand, or a rider who has not reported a position yet).
-        Box(Modifier.fillMaxWidth().height(430.dp).background(Color(0xFFE3EAE6))) {
-            if (s.hasMap) {
-                val home = GeoPoint(s.homeLat!!, s.homeLng!!)
-                val rider = if (s.riderLat != null && s.riderLng != null) GeoPoint(s.riderLat, s.riderLng) else null
-                OsmMap(
-                    center = rider ?: home,
-                    zoom = if (rider != null) 15.5 else 16.0,
-                    markers = listOfNotNull(
-                        OsmMarker(home, "Tu casa"),
-                        rider?.let { OsmMarker(it, s.riderLine) },
-                    ),
-                    route = listOfNotNull(rider, home),
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Box(
-                    Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Filled.Place, null, tint = MakiColors.Gen, modifier = Modifier.size(34.dp))
-                        Text(
-                            "Ubicando a tu Eco-Rider…",
-                            color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
-                        )
-                    }
-                }
-            }
-            // ETA chip
-            Row(
-                Modifier.align(Alignment.TopStart).padding(20.dp).makiShadow(16.dp, 5.dp)
-                    .clip(RoundedCornerShape(16.dp)).background(Color(0xF2FFFFFF)).padding(start = 12.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(8.dp).clip(CircleShape).background(MakiColors.Success))
-                Text(
-                    listOfNotNull(s.distanceText, s.etaText).joinToString(" · "),
-                    color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp,
-                )
-            }
-        }
-
-        // Info
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                InfoPill(Modifier.weight(1f), Icons.Filled.Navigation, MakiColors.Rider, MakiColors.RiderTint, s.distanceText ?: s.etaText)
-                InfoPill(Modifier.weight(1f), Icons.Filled.Inventory2, MakiColors.Gen, MakiColors.GenTint, s.itemsText)
-            }
-            Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0x0D0F6E56)).padding(14.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(32.dp).clip(CircleShape).background(MakiColors.Gen), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Eco, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                }
-                Text(s.statusMessage,
-                    color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 13.sp, lineHeight = 18.sp)
-            }
-            PrimaryButton("Llamar al Eco-Rider", Modifier.fillMaxWidth(), icon = Icons.Filled.Phone, onClick = call)
-            if (s.canComplete && state != null) {
-                PrimaryButton(
-                    "Confirmar recojo completado",
-                    Modifier.fillMaxWidth(),
-                    icon = Icons.Filled.CheckCircle,
-                    color = MakiColors.Success,
-                    enabled = !busy,
-                    onClick = onComplete,
-                )
-            }
+    // Sample only for @Preview: on a device a fake "Carlos" is worse than a spinner.
+    val s = state ?: SampleTracking.takeIf { LocalInspectionMode.current }
+    Column(Modifier.fillMaxSize().makiScreen().statusBarsPadding()) {
+        DetailHeader(s?.headerTitle ?: "Tu recojo", onBack)
+        when {
+            s == null -> MakiLoading("Buscando tu recojo…", accent = MakiColors.Gen)
+            s.pickupId == null && state != null -> MakiEmpty(
+                icon = Icons.Filled.LocalShipping,
+                title = "Aún no tienes recojos",
+                hint = s.statusMessage,
+                accent = MakiColors.Gen,
+            )
+            else -> TrackingBody(s, busy, onCancel)
         }
     }
 }
 
 @Composable
-private fun InfoPill(modifier: Modifier, icon: ImageVector, tint: Color, bg: Color, text: String) {
-    Row(
-        modifier.makiShadow(14.dp, 4.dp).clip(RoundedCornerShape(14.dp)).background(MakiColors.Surface).padding(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically,
+private fun TrackingBody(s: TrackingUi, busy: Boolean, onCancel: () -> Unit) {
+    val context = LocalContext.current
+
+    LazyColumn(
+        Modifier.fillMaxSize().navigationBarsPadding(),
+        contentPadding = PaddingValues(
+            start = MakiSpace.gutter, end = MakiSpace.gutter,
+            top = MakiSpace.xs, bottom = MakiSpace.xl,
+        ),
+        verticalArrangement = Arrangement.spacedBy(MakiSpace.stack),
     ) {
-        Box(Modifier.size(32.dp).clip(RoundedCornerShape(10.dp)).background(bg), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = tint, modifier = Modifier.size(17.dp))
+        item {
+            HeroCard(
+                accent = MakiColors.Gen,
+                overline = "TU RECOJO",
+                metric = s.etaText.ifBlank { "—" },
+                support = s.statusMessage,
+            ) {
+                if (s.riderLine.isNotBlank()) {
+                    Text(s.riderLine, color = MakiColors.OnDark, style = MakiType.bodySmall)
+                }
+            }
         }
-        Text(text, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(MakiSpace.stack)) {
+                val enVuelo = s.distanceText != null
+                MetricTile(
+                    Icons.Filled.Navigation,
+                    s.distanceText ?: s.etaText.ifBlank { "—" },
+                    if (enVuelo) "Distancia / tiempo" else "Estado del recojo",
+                    MakiColors.Rider, Modifier.weight(1f),
+                )
+                MetricTile(
+                    Icons.Filled.Inventory2, s.itemsText, "Ítems a recoger",
+                    MakiColors.Gen, Modifier.weight(1f),
+                )
+            }
+        }
+        item { SectionLabel("Seguimiento") }
+        item {
+            Box(
+                Modifier.fillMaxWidth().height(MakiSpace.xxl * 10)
+                    .clip(RoundedCornerShape(MakiRadius.card)).background(MakiColors.SurfaceSoft),
+            ) {
+                if (s.hasMap) {
+                    val home = GeoPoint(s.homeLat!!, s.homeLng!!)
+                    val rider = if (s.riderLat != null && s.riderLng != null) GeoPoint(s.riderLat, s.riderLng) else null
+                    OsmMap(
+                        center = home,
+                        zoom = 16.0,
+                        markers = listOfNotNull(
+                            // The pickup point is wherever the phone was when the family asked.
+                            OsmMarker(home, "Punto de recojo", MakiColors.Gen.toArgb()),
+                            rider?.let { OsmMarker(it, s.riderLine, MakiColors.Rider.toArgb()) },
+                        ),
+                        // Street path when the router answered; a straight line otherwise.
+                        route = s.path.map { GeoPoint(it.lat, it.lng) }
+                            .ifEmpty { if (rider != null) listOf(rider, home) else emptyList() },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Column(
+                        Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(MakiSpace.sm),
+                    ) {
+                        Icon(Icons.Filled.Place, null, tint = MakiColors.Gen, modifier = Modifier.size(MakiSpace.lg * 2))
+                        Text(
+                            "Tu dirección no tiene ubicación en el mapa",
+                            color = MakiColors.Text2, style = MakiType.bodySmall,
+                        )
+                    }
+                }
+            }
+        }
+        val chip = listOfNotNull(s.distanceText, s.etaText.ifBlank { null }, s.staleText).joinToString(" · ")
+        if (chip.isNotBlank()) {
+            item {
+                StatusChip(chip, if (s.staleText == null) MakiColors.Success else MakiColors.Streak)
+            }
+        }
+        s.riderPhone?.let { phone ->
+            item {
+                PrimaryButton("Llamar al Eco-Rider", Modifier.fillMaxWidth(), icon = Icons.Filled.Phone, onClick = {
+                    runCatching { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))) }
+                })
+            }
+        }
+        if (s.canCancel) {
+            item {
+                if (busy) {
+                    PrimaryButton(
+                        "Cancelando…", Modifier.fillMaxWidth(),
+                        icon = Icons.Filled.Close, enabled = false, color = MakiColors.Error,
+                    )
+                } else {
+                    SecondaryButton(
+                        "Cancelar recojo", Modifier.fillMaxWidth(),
+                        icon = Icons.Filled.Close, color = MakiColors.Error,
+                        onClick = { if (!busy) onCancel() },
+                    )
+                }
+            }
+        }
     }
 }
 

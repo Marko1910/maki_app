@@ -28,7 +28,7 @@ class EcoTipsWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ct
                 "El ${riser.name} subió ${"%.0f".format(riser.pct_change)}% (S/${"%.2f".format(riser.price_per_kg)}/kg). " +
                 "¡Buen momento para reciclar antes de que baje!"
         } else {
-            "MAKI ♻️" to EcoPhrases.random()
+            "Ruma ♻️" to EcoPhrases.random()
         }
     }
 }

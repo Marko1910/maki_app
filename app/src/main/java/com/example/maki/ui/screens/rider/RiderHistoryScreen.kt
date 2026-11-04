@@ -35,17 +35,17 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.maki.ui.components.makiScreen
+import com.example.maki.ui.components.makiCard
+import com.example.maki.ui.theme.MakiRadius
 import com.example.maki.ui.components.DetailHeader
 import com.example.maki.ui.components.MakiEmpty
 import com.example.maki.ui.components.MakiError
 import com.example.maki.ui.components.MakiLoading
-import com.example.maki.ui.components.makiShadow
 import com.example.maki.ui.theme.MAKITheme
 import com.example.maki.ui.theme.MakiColors
-import com.example.maki.ui.theme.MakiFont
+import com.example.maki.ui.theme.MakiType
 
 enum class HistoryStatus { COMPLETED, PARTIAL, CANCELLED }
 
@@ -84,7 +84,7 @@ fun RiderHistoryScreen(
     val filters = state?.filters ?: RiderHistoryUiState().filters
     val sections = state?.let { filterSections(it.sections, selectedFilter) }
 
-    Column(Modifier.fillMaxSize().background(MakiColors.Bg).statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().makiScreen().statusBarsPadding()) {
         DetailHeader(title = "Mi Historial", onBack = onBack)
 
         Row(
@@ -119,8 +119,7 @@ fun RiderHistoryScreen(
                     item(key = "h-${section.label}") {
                         Text(
                             section.label,
-                            color = MakiColors.Text2, fontFamily = MakiFont,
-                            fontWeight = FontWeight.ExtraBold, fontSize = 12.sp,
+                            color = MakiColors.Text2, style = MakiType.chip,
                             modifier = Modifier.padding(top = 6.dp),
                         )
                     }
@@ -161,10 +160,8 @@ private fun FilterPill(label: String, selected: Boolean, onClick: () -> Unit) {
     ) {
         Text(
             label,
-            color = if (selected) Color.White else MakiColors.Text2,
-            fontFamily = MakiFont,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-            fontSize = 13.sp,
+            color = if (selected) MakiColors.OnDark else MakiColors.Text2,
+            style = if (selected) MakiType.chip else MakiType.label,
         )
     }
 }
@@ -174,9 +171,7 @@ private fun HistoryCard(entry: RiderHistoryEntryUi) {
     val (icon, color) = statusVisuals(entry.status)
     Row(
         Modifier
-            .makiShadow(14.dp, 4.dp, Color(0x0A1A1A1A))
-            .clip(RoundedCornerShape(14.dp))
-            .background(MakiColors.Surface)
+            .makiCard(MakiRadius.badge)
             .fillMaxWidth()
             .padding(14.dp)
             // One announcement per card instead of six disconnected fragments.
@@ -190,20 +185,20 @@ private fun HistoryCard(entry: RiderHistoryEntryUi) {
         Icon(icon, null, tint = color, modifier = Modifier.size(24.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(entry.name, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                Text(entry.name, color = MakiColors.Text, style = MakiType.cardTitle, modifier = Modifier.weight(1f))
                 StatusBadge(entry.statusLabel, color)
             }
-            Text(entry.detail, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Text(entry.detail, color = MakiColors.Text2, style = MakiType.label)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     entry.earnings,
                     color = if (entry.earnings == "—") MakiColors.Text2 else MakiColors.Success,
-                    fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp,
+                    style = MakiType.chip,
                 )
-                Text(entry.time, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+                Text(entry.time, color = MakiColors.Text2, style = MakiType.caption)
             }
             entry.note?.let {
-                Text(it, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+                Text(it, color = MakiColors.Text2, style = MakiType.caption)
             }
         }
     }
@@ -214,7 +209,7 @@ private fun StatusBadge(label: String, color: Color) {
     Box(
         Modifier.clip(RoundedCornerShape(8.dp)).background(color.copy(alpha = 0.10f)).padding(horizontal = 8.dp, vertical = 2.dp),
     ) {
-        Text(label, color = color, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+        Text(label, color = color, style = MakiType.overline)
     }
 }
 

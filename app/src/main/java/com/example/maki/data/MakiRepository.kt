@@ -90,7 +90,7 @@ object MakiRepository {
     /** Loads the signed-in generator's profile, caching it for instant first paint. */
     suspend fun loadGeneratorProfile(): GeneratorProfileDto? {
         val id = uid ?: return null
-        val select = "points_balance,cash_earned_total,current_streak_days," +
+        val select = "points_balance,points_pending,cash_earned_total,current_streak_days," +
             "co2_avoided_kg,recycled_kg,water_saved_l,trees_equivalent,profiles(display_name,full_name)"
         val dto = list("generator_profiles?profile_id=eq.$id&select=$select", GeneratorProfileDto.serializer())
             .firstOrNull()
@@ -99,6 +99,9 @@ object MakiRepository {
         }
         return dto
     }
+
+    /** The last name we saw, so a cold start greets by name instead of "Hola,". */
+    fun cachedDisplayName(): String? = MakiPrefs.cachedDisplayName
 
     /** The last persisted profile, for rendering instantly before the network responds. */
     fun cachedProfile(): GeneratorProfileDto? =
@@ -110,7 +113,7 @@ object MakiRepository {
 
     suspend fun loadRedemptionOptions(): List<RedemptionOptionDto> = optionsCache ?: list(
         "redemption_options?is_active=eq.true" +
-            "&select=id,code,name,kind,description,points_per_unit,min_points,unit_value,icon,color,sort_order" +
+            "&select=id,code,name,kind,description,points_per_unit,min_points,unit_value,icon,color,sort_order,partner" +
             "&order=sort_order.asc",
         RedemptionOptionDto.serializer(),
     ).also { optionsCache = it }
@@ -154,7 +157,7 @@ object MakiRepository {
     // ---- Pickup form ----
 
     suspend fun loadMaterials(): List<MaterialDto> = materialsCache ?: list(
-        "materials?is_active=eq.true&select=id,code,name,icon,color,points_per_unit,sort_order&order=sort_order.asc",
+        "materials?is_active=eq.true&select=id,code,name,icon,color,points_per_unit,points_per_kg,sort_order&order=sort_order.asc",
         MaterialDto.serializer(),
     ).also { materialsCache = it }
 
@@ -199,7 +202,7 @@ object MakiRepository {
     suspend fun loadNotifications(): List<NotificationDto> {
         val id = uid ?: return emptyList()
         return list(
-            "notifications?user_id=eq.$id&select=id,kind,title,body,is_read,created_at&order=created_at.desc",
+            "notifications?user_id=eq.$id&select=id,kind,title,body,is_read,created_at,reference_type&order=created_at.desc",
             NotificationDto.serializer(),
         )
     }
@@ -210,17 +213,40 @@ object MakiRepository {
         "id,code,status,scheduled_date,window_label,eta_minutes,generator_points_awarded,rider_id," +
             "created_at,completed_at,latitude,longitude,distance_m," +
             "pickup_items(reported_quantity,confirmed_quantity,points,materials(id,name,code,icon))," +
-            "rider:profiles!pickups_rider_id_fkey(display_name)," +
+            "rider:profiles!pickups_rider_id_fkey(display_name,phone)," +
             "address:addresses!pickups_address_id_fkey(address_line,latitude,longitude)"
 
-    /** The latest pickup for tracking (any status). */
-    suspend fun loadLatestPickup(): PickupDto? {
+    /**
+     * The pickup to track: the one still in flight, else the most recent. "Latest"
+     * alone showed a finished pickup while an older one was still on its way.
+     */
+    suspend fun loadTrackedPickup(pickupId: String? = null): PickupDto? {
         val id = uid ?: return null
+        // Opened from a specific row (history): track that one, not the newest —
+        // cancelling from the map must hit the pickup the family walked in from.
+        if (pickupId != null) return list(
+            "pickups?id=eq.$pickupId&generator_id=eq.$id&select=$PICKUP_SELECT&limit=1",
+            PickupDto.serializer(),
+        ).firstOrNull()
         return list(
+            "pickups?generator_id=eq.$id&status=in.($ACTIVE_STATUSES)&select=$PICKUP_SELECT&order=created_at.desc&limit=1",
+            PickupDto.serializer(),
+        ).firstOrNull() ?: list(
             "pickups?generator_id=eq.$id&select=$PICKUP_SELECT&order=created_at.desc&limit=1",
             PickupDto.serializer(),
         ).firstOrNull()
     }
+
+    /** The family calls it off (the DB only allows it before the rider reaches the door). */
+    suspend fun cancelPickup(pickupId: String) {
+        MakiApi.patch(
+            "pickups?id=eq.$pickupId",
+            """{"status":"cancelled","cancel_reason":"Cancelado por la familia"}""",
+        )
+    }
+
+    /** Statuses of a pickup that is still happening (not settled, not called off). */
+    const val ACTIVE_STATUSES = "requested,assigned,en_route,arriving,collecting"
 
     /** Recent pickups for the history timeline. */
     suspend fun loadPickups(limit: Int = 20): List<PickupDto> {
@@ -233,7 +259,7 @@ object MakiRepository {
 
     private const val RIDER_PROFILE_SELECT =
         "rating,vehicle_type,rating_count,total_collections,total_recycled_kg," +
-            "co2_avoided_kg,earnings_balance,earnings_lifetime,monthly_goal"
+            "co2_avoided_kg,earnings_balance,earnings_lifetime,monthly_goal,is_available,rider_code"
 
     suspend fun loadRiderProfile(riderId: String): RiderProfileDto? = list(
         "rider_profiles?profile_id=eq.$riderId&select=$RIDER_PROFILE_SELECT",
@@ -272,8 +298,8 @@ object MakiRepository {
      * [commitScan] replays. [DetectResultDto.rejected] carries the anti-spoof and
      * "nothing here" outcomes — the camera stays open through all of them.
      */
-    suspend fun previewFrame(sessionId: String, frame: String, motion: MotionDto): DetectResultDto =
-        callDetect(DetectRequest(sessionId, "preview", listOf(frame), motion))
+    suspend fun previewFrame(sessionId: String, frame: String, motion: MotionDto, group: Int = 0): DetectResultDto =
+        callDetect(DetectRequest(sessionId, "preview", listOf(frame), motion, group = group))
 
     /**
      * Closes the scan: the server re-checks its own signatures, takes the best count per
@@ -304,7 +330,7 @@ object MakiRepository {
             "generator_points_awarded,rider_id,created_at,completed_at," +
             "match_status,condition,notes,cancel_reason,latitude,longitude,distance_m," +
             "pickup_items(reported_quantity,confirmed_quantity,points,materials(id,name,code,icon))," +
-            "generator:profiles!pickups_generator_id_fkey(display_name)," +
+            "generator:profiles!pickups_generator_id_fkey(display_name,phone)," +
             "address:addresses!pickups_address_id_fkey(address_line,reference,latitude,longitude)"
 
     /** Unassigned requests a rider can take (RLS already scopes visibility). */
@@ -313,14 +339,23 @@ object MakiRepository {
         PickupDto.serializer(),
     )
 
-    /** The rider's in-flight pickup, if any. */
-    suspend fun loadMyRiderPickup(): PickupDto? {
-        val id = uid ?: return null
-        return list(
-            "pickups?rider_id=eq.$id&status=in.(assigned,en_route,arriving,collecting)" +
-                "&select=$RIDER_PICKUP_SELECT&order=created_at.desc&limit=1",
-            PickupDto.serializer(),
-        ).firstOrNull()
+    /** Hands the rider's stop back to the open board (an RPC: RLS alone can't null rider_id). */
+    suspend fun releasePickup(pickupId: String) {
+        val body = MakiApi.json.encodeToString(RpcPickupId.serializer(), RpcPickupId(pickupId))
+        MakiApi.post("rpc/release_pickup", body, prefer = "return=minimal")
+    }
+
+    /**
+     * What the rider actually counted at the door, per material id. A record, not a
+     * payout: the acopio's weighing (settle_delivery) is what finally prices points.
+     */
+    suspend fun confirmQuantities(pickupId: String, items: List<Pair<String, Int>>) {
+        items.forEach { (materialId, qty) ->
+            MakiApi.patch(
+                "pickup_items?pickup_id=eq.$pickupId&material_id=eq.$materialId",
+                """{"confirmed_quantity":$qty}""",
+            )
+        }
     }
 
     /**
@@ -360,6 +395,36 @@ object MakiRepository {
         val id = uid ?: return null
         return list("profiles?id=eq.$id&select=display_name", RiderNameDto.serializer())
             .firstOrNull()?.display_name
+            ?.also { MakiPrefs.cachedDisplayName = it }
+    }
+
+    /** The fields the account owner may edit about themselves. */
+    suspend fun loadMyProfile(): MyProfileDto? {
+        val id = uid ?: return null
+        return list(
+            "profiles?id=eq.$id&select=display_name,phone,avatar_url",
+            MyProfileDto.serializer(),
+        ).firstOrNull()
+    }
+
+    /**
+     * Saves the name every other screen shows. RLS limits the row to the caller,
+     * so no id travels in the body: the URL already says whose profile this is.
+     */
+    suspend fun updateMyProfile(displayName: String, phone: String?) {
+        val id = uid ?: return
+        val body = MakiApi.json.encodeToString(
+            ProfileUpdateDto.serializer(),
+            ProfileUpdateDto(display_name = displayName, phone = phone),
+        )
+        MakiApi.patch("profiles?id=eq.$id", body)
+        MakiPrefs.cachedDisplayName = displayName
+    }
+
+    /** The signed-in account's role, straight from `profiles` — never from local prefs. */
+    suspend fun loadMyRole(): String? {
+        val id = uid ?: return null
+        return list("profiles?id=eq.$id&select=role", ProfileRoleDto.serializer()).firstOrNull()?.role
     }
 
     // ---- Challenges (retos) ----
@@ -409,6 +474,19 @@ object MakiRepository {
     }
 
     /** Live market prices per material (public view; works without a session). */
+    /** The market feed: what moved in prices, demand or the rules, newest first. */
+    suspend fun loadMarketNews(limit: Int = 20): List<MarketNewsDto> = list(
+        "market_news?is_active=eq.true&select=id,kind,title,summary,material_code,source,url,published_at" +
+            "&order=published_at.desc&limit=$limit",
+        MarketNewsDto.serializer(),
+    )
+
+    /** How badly the acopios want each material right now (stock + price). */
+    suspend fun loadMaterialDemand(): List<MaterialDemandDto> = list(
+        "v_material_demand?select=code,name,centros,mejor_precio,stock_kg,demanda",
+        MaterialDemandDto.serializer(),
+    )
+
     suspend fun loadPrices(): List<MaterialPriceDto> =
         list("v_material_prices?select=code,name,price_per_kg,pct_change", MaterialPriceDto.serializer())
 
@@ -424,17 +502,25 @@ object MakiRepository {
         MakiApi.post("redemptions", body, prefer = "return=minimal")
     }
 
-    /** Creates a 'requested' pickup with its items; returns the new pickup id. */
+    /**
+     * Creates a 'requested' pickup with its items; returns the new pickup id.
+     * [at] is the device fix: the rider comes to where the phone is, and dispatch
+     * measures from it. Without one the address coordinates apply.
+     */
     suspend fun createPickup(
         addressId: String?,
         scheduledDate: String?,
         windowLabel: String?,
         items: List<Pair<String, Int>>, // materialId to reported_quantity
+        at: RoutePlanner.LatLng? = null,
     ): String {
         val id = uid ?: error("No session")
         val pickupBody = MakiApi.json.encodeToString(
             NewPickup.serializer(),
-            NewPickup(generator_id = id, address_id = addressId, scheduled_date = scheduledDate, window_label = windowLabel),
+            NewPickup(
+                generator_id = id, address_id = addressId, scheduled_date = scheduledDate, window_label = windowLabel,
+                latitude = at?.lat, longitude = at?.lng,
+            ),
         )
         val pickupId = MakiApi.json
             .decodeFromString(ListSerializer(PickupIdDto.serializer()), MakiApi.post("pickups?select=id", pickupBody))
@@ -457,10 +543,14 @@ object MakiRepository {
         addressId: String?,
         scheduledDate: String?,
         windowLabel: String?,
+        at: RoutePlanner.LatLng? = null,
     ): String? {
         val body = MakiApi.json.encodeToString(
             RpcCreatePickup.serializer(),
-            RpcCreatePickup(p_address_id = addressId, p_scheduled_date = scheduledDate, p_window_label = windowLabel),
+            RpcCreatePickup(
+                p_address_id = addressId, p_scheduled_date = scheduledDate, p_window_label = windowLabel,
+                p_latitude = at?.lat, p_longitude = at?.lng,
+            ),
         )
         // The RPC returns a bare uuid; PostgREST renders a scalar as a quoted string.
         return MakiApi.post("rpc/create_pickup_from_detection", body)
@@ -511,16 +601,97 @@ object MakiRepository {
         MakiApi.patch("rider_profiles?profile_id=eq.$id", body)
     }
 
+    /**
+     * On/off shift. `is_available` is what `assign_nearest_rider` filters on, so a
+     * rider who turns it off stops being dispatched (they can still take stops from
+     * the board themselves).
+     */
+    /**
+     * [riderId] pins whose availability is being written: a background caller passes the
+     * rider it meant, so a sign-in landing mid-request cannot redirect the write to
+     * whoever is signed in by the time it leaves (RLS then matches nothing, below).
+     */
+    suspend fun setRiderAvailability(available: Boolean, riderId: String? = null) {
+        // Not best-effort: this is what makes dispatch send stops (and pay) or stop.
+        // Returning quietly let a caller announce a shift that was never turned on.
+        val id = riderId ?: uid ?: error("Tu sesión expiró. Vuelve a entrar para cambiar tu turno.")
+        // A PATCH matching no row is a 204, not an error — RLS hiding the profile and a
+        // missing profile both read as success. Ask for the row back and check it came.
+        val updated = MakiApi.patch(
+            "rider_profiles?profile_id=eq.$id",
+            """{"is_available":$available}""",
+            prefer = "return=representation",
+        )
+        // No match comes back as `[]`; a row brings its object with it.
+        if (!updated.contains('{')) error("No pudimos cambiar tu turno: tu perfil de Eco-Rider no respondió.")
+    }
+
+    /**
+     * Publishes the hour the rider promised to go out, so it is not only a reminder
+     * on their phone: the operator sees who is coming back today. Null clears it.
+     */
+    suspend fun setRiderShiftStart(atMillis: Long?) {
+        val id = uid ?: return
+        val value = atMillis?.let { "\"${isoAt(it)}\"" } ?: "null"
+        MakiApi.patch("rider_profiles?profile_id=eq.$id", """{"shift_start_at":$value}""")
+    }
+
+    private fun isoAt(millis: Long): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+            .format(java.util.Date(millis))
+
     /** UTC timestamp PostgREST accepts (no java.time — minSdk 24). */
     private fun isoNow(): String =
         java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
             .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
             .format(java.util.Date())
 
-    /** Marks a pickup completed → settle_pickup credits the promised points. */
+    /**
+     * The rider closes the stop → settle_pickup books the provisional points and the
+     * rider's fee. Only the rider (or an operator) may: the RPC refuses the family.
+     */
     suspend fun completePickup(pickupId: String) {
-        val body = MakiApi.json.encodeToString(RpcCompletePickup.serializer(), RpcCompletePickup(pickupId))
+        val body = MakiApi.json.encodeToString(RpcPickupId.serializer(), RpcPickupId(pickupId))
         MakiApi.post("rpc/complete_pickup", body, prefer = "return=minimal")
+    }
+
+    /**
+     * The completed stops the rider is still carrying. PostgREST has no subqueries, so
+     * "in no delivery yet" is an anti-join over the embedded link (`dp=is.null`). A stop
+     * already tied to someone else's delivery also reads null here, because RLS hides
+     * that row: this list is a proposal and [createDelivery] is what refuses it.
+     */
+    suspend fun loadUndeliveredPickups(): List<PickupDto> {
+        val id = uid ?: return emptyList()
+        return list(
+            "pickups?rider_id=eq.$id&status=eq.completed&dp=is.null" +
+                "&select=$RIDER_PICKUP_SELECT,dp:delivery_pickups(pickup_id)" +
+                "&order=completed_at.asc",
+            PickupDto.serializer(),
+        )
+    }
+
+    /** The rider's own loads, newest first: where each one ended and what it paid. */
+    suspend fun loadMyDeliveries(limit: Int = 10): List<DeliveryDto> {
+        val id = uid ?: return emptyList()
+        return list(
+            "deliveries?rider_id=eq.$id&select=id,code,status,total_kg,rider_amount," +
+                "departed_at,settled_at,center:collection_centers(name),delivery_pickups(pickup_id)" +
+                "&order=created_at.desc&limit=$limit",
+            DeliveryDto.serializer(),
+        )
+    }
+
+    /**
+     * A single RPC validates ownership and completion while locking the pickups;
+     * direct inserts could attach another rider's load or leave an empty delivery.
+     */
+    suspend fun createDelivery(centerId: String, pickupIds: List<String>) {
+        val body = MakiApi.json.encodeToString(
+            RpcCreateDelivery.serializer(), RpcCreateDelivery(centerId, pickupIds),
+        )
+        MakiApi.post("rpc/create_delivery", body, prefer = "return=minimal")
     }
 
     suspend fun markAllNotificationsRead() {

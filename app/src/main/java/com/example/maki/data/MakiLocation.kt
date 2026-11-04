@@ -35,7 +35,7 @@ object MakiLocation {
      * nothing is cached yet — instant, no GPS wake-up, right for ordering stops
      * a few hundred metres apart.
      */
-    fun lastKnown(context: Context): RoutePlanner.LatLng? {
+    fun lastKnown(context: Context, maxAgeMs: Long = Long.MAX_VALUE): RoutePlanner.LatLng? {
         if (!hasPermission(context)) return null
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
         val fix = runCatching {
@@ -43,16 +43,21 @@ object MakiLocation {
                 .mapNotNull { provider -> lm.getLastKnownLocation(provider) }
                 .maxByOrNull { it.time }
         }.getOrNull() ?: return null
+        if (System.currentTimeMillis() - fix.time > maxAgeMs) return null
         return RoutePlanner.LatLng(fix.latitude, fix.longitude)
     }
 
     /**
-     * A fix good enough to register a home on: the cached one when it exists,
-     * otherwise waits up to [timeoutMs] for the hardware to produce one. Null when
-     * the user denied permission, has location off, or is somewhere with no signal.
+     * A fix good enough to register a home on: the cached one when it exists (and
+     * is younger than [maxAgeMs]), otherwise waits up to [timeoutMs] for the
+     * hardware to produce one. Null when the user denied permission, has location
+     * off, or is somewhere with no signal.
+     *
+     * A moving rider must pass a small [maxAgeMs]: an hours-old cached fix got
+     * published as "where Carlos is now" and put him 500 km from his route.
      */
-    suspend fun current(context: Context, timeoutMs: Long = 12_000): RoutePlanner.LatLng? {
-        lastKnown(context)?.let { return it }
+    suspend fun current(context: Context, timeoutMs: Long = 12_000, maxAgeMs: Long = Long.MAX_VALUE): RoutePlanner.LatLng? {
+        lastKnown(context, maxAgeMs)?.let { return it }
         if (!hasPermission(context)) return null
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
         return withTimeoutOrNull(timeoutMs) { requestSingleFix(lm, context) }

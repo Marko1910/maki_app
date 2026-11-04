@@ -29,16 +29,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.maki.ui.components.makiScreen
 import com.example.maki.ui.components.BackButton
 import com.example.maki.ui.components.IconBadge
 import com.example.maki.ui.components.makiShadow
 import com.example.maki.ui.theme.MAKITheme
 import com.example.maki.ui.theme.MakiColors
-import com.example.maki.ui.theme.MakiFont
+import com.example.maki.ui.theme.MakiType
 
 private val SampleNotifs = listOf(
     NotifUi("streak_reminder", "¡Racha de 21 días!", "No pierdas tu racha, reporta hoy tus residuos.", "Hace 2h", unread = true, highlighted = true),
@@ -55,15 +54,15 @@ fun GeneratorNotificationsScreen(
     onCardClick: (Long) -> Unit = {},
 ) {
     val list = items ?: SampleNotifs
-    Column(Modifier.fillMaxSize().background(MakiColors.Bg).statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().makiScreen().statusBarsPadding()) {
         Row(
             Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
         ) {
             BackButton(onBack)
-            Text("Notificaciones", color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, modifier = Modifier.weight(1f))
+            Text("Notificaciones", color = MakiColors.Text, style = MakiType.metricMedium, modifier = Modifier.weight(1f))
             if (list.any { it.unread }) {
-                Text("Marcar leídas", color = MakiColors.Gen, fontFamily = MakiFont, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                Text("Marcar leídas", color = MakiColors.Gen, style = MakiType.chip,
                     modifier = Modifier.clickable(onClick = onMarkAllRead))
             }
         }
@@ -95,7 +94,7 @@ private fun notifVisual(kind: String): NotifVisual = when (kind) {
 private fun NotifCard(icon: ImageVector, iconTint: Color, iconBg: Color, title: String, body: String, time: String, unread: Boolean = false, highlighted: Boolean = false, onClick: () -> Unit = {}) {
     Row(
         Modifier.fillMaxWidth().makiShadow(14.dp, 4.dp).clip(RoundedCornerShape(14.dp))
-            .background(if (highlighted) Color(0x0D0F6E56) else MakiColors.Surface)
+            .background(if (highlighted) MakiColors.GenTint else MakiColors.Surface)
             .then(if (highlighted) Modifier.border(1.dp, MakiColors.GenTintStrong, RoundedCornerShape(14.dp)) else Modifier)
             .clickable(onClick = onClick)
             .padding(14.dp),
@@ -104,11 +103,11 @@ private fun NotifCard(icon: ImageVector, iconTint: Color, iconBg: Color, title: 
         IconBadge(icon, iconTint, iconBg, boxSize = 42.dp, iconSize = 21.dp, radius = 21.dp)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(title, color = MakiColors.Text, fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Text(title, color = MakiColors.Text, style = MakiType.cardTitle, modifier = Modifier.weight(1f))
                 if (unread) Box(Modifier.size(9.dp).clip(CircleShape).background(MakiColors.Gen))
             }
-            Text(body, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.Medium, fontSize = 13.sp, lineHeight = 18.sp)
-            Text(time, color = MakiColors.Text2, fontFamily = MakiFont, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+            Text(body, color = MakiColors.Text2, style = MakiType.bodySmall)
+            Text(time, color = MakiColors.Text2, style = MakiType.caption)
         }
     }
 }

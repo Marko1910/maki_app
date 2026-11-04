@@ -14,7 +14,6 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.example.maki.data.EcoTipsWorker
-import com.example.maki.data.MakiPrefs
 import com.example.maki.data.NotificationHelper
 import com.example.maki.navigation.AppRoot
 import com.example.maki.ui.theme.MAKITheme
@@ -27,7 +26,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        MakiPrefs.init(this)
+        // MakiPrefs is initialised in MakiApp: a worker can start the process with no Activity.
         NotificationHelper.ensureChannel(this)
         requestNotificationPermission()
         scheduleEcoTips()

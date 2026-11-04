@@ -18,7 +18,7 @@ object NotificationHelper {
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                CHANNEL_ID, "Consejos y precios MAKI", NotificationManager.IMPORTANCE_DEFAULT,
+                CHANNEL_ID, "Consejos y precios Ruma", NotificationManager.IMPORTANCE_DEFAULT,
             ).apply { description = "Frases motivadoras y alertas de precio de reciclables" }
             context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }

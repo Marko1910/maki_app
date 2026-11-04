@@ -8,7 +8,8 @@ import android.content.SharedPreferences
  * the onboarding flag, the signed-in session (so the user is not asked to log in
  * every launch), and a cached profile JSON for instant first paint.
  *
- * Initialised once from [Context] in MainActivity.
+ * Initialised once from [Context] in MakiApp.onCreate — not in an Activity: WorkManager
+ * starts the process with no screen, and there the reads have to work too.
  */
 object MakiPrefs {
     private lateinit var prefs: SharedPreferences
@@ -48,6 +49,14 @@ object MakiPrefs {
         get() = if (ready) prefs.getString(KEY_LNG, null)?.toDoubleOrNull() else null
         set(v) { if (ready) prefs.edit().putString(KEY_LNG, v?.toString()).apply() }
 
+    /**
+     * When the rider said they go out ("salgo 3:00 pm"), as epoch millis. The app
+     * turns the shift on by itself at that hour; null = no planned departure.
+     */
+    var shiftStartAt: Long?
+        get() = if (ready) prefs.getLong(KEY_SHIFT_AT, 0L).takeIf { it > 0 } else null
+        set(v) { if (ready) prefs.edit().putLong(KEY_SHIFT_AT, v ?: 0L).apply() }
+
     // ---- Active role ("generador" | "eco_rider" | "operador") ----
     var role: String
         get() = (if (ready) prefs.getString(KEY_ROLE, null) else null) ?: "generador"
@@ -82,12 +91,22 @@ object MakiPrefs {
         get() = if (ready) prefs.getString(KEY_PROFILE, null) else null
         set(v) { if (ready) prefs.edit().putString(KEY_PROFILE, v).apply() }
 
+    // ---- Cached display name ----
+    // El generador ya pintaba su nombre al instante desde el perfil cacheado;
+    // el rider no tenia nada que cachear y saludaba con "Hola," a secas
+    // durante los segundos que tarda la red.
+    var cachedDisplayName: String?
+        get() = if (ready) prefs.getString(KEY_DISPLAY_NAME, null) else null
+        set(v) { if (ready) prefs.edit().putString(KEY_DISPLAY_NAME, v).apply() }
+
+    private const val KEY_DISPLAY_NAME = "display_name"
     private const val KEY_ONBOARDING = "onboarding_seen"
     private const val KEY_CAMERA_COACH = "camera_coach_seen"
     private const val KEY_ADDR = "pending_address"
     private const val KEY_LAT = "pending_lat"
     private const val KEY_LNG = "pending_lng"
     private const val KEY_ROLE = "active_role"
+    private const val KEY_SHIFT_AT = "rider_shift_at"
     private const val KEY_ACCESS = "session_access"
     private const val KEY_REFRESH = "session_refresh"
     private const val KEY_UID = "session_uid"

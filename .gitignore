@@ -17,3 +17,10 @@ local.properties
 # deploy scratch
 supabase/functions/*/.payload.json
 app/src/main/java/com/example/maki/.onb_head.txt
+.gstack/
+
+# Motor de impeccable: 20 MB por copia, especifico de plataforma y se
+# reinstala con `npx impeccable install`. Las skills en markdown si se
+# versionan; el ejecutable no tiene por que viajar en el historial.
+.claude/skills/impeccable/scripts/bin/
+.agents/skills/impeccable/scripts/bin/
