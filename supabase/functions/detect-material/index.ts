@@ -282,12 +282,33 @@ function canonical(userId: string, sessionId: string, iat: number, items: Counte
   return `${userId}|${sessionId}|${iat}${group ? `|g${group}` : ""}|${parts.join(",")}`;
 }
 
-async function sign(secret: string, userId: string, sessionId: string, iat: number, items: Counted[], group = 0): Promise<string> {
+// Bump when the prompt, catalog or counting rules change; model aliases can drift too.
+const PIPELINE_VERSION = "ruma-photo-2026-11-03-v1";
+type Provenance = { provider: string; model: string; pipeline: string; resolved_model?: string };
+
+function tokenParts(token: unknown): { iat: number; mac: string; metadata: string; source: Provenance | null } | null {
+  if (typeof token !== "string" || token.length > 2048) return null;
+  const legacy = /^(\d+)\.([A-Za-z0-9+/]{43}=)$/.exec(token);
+  if (legacy) return { iat: Number(legacy[1]), mac: legacy[2], metadata: "", source: null };
+  const v2 = /^v2\.(\d+)\.([A-Za-z0-9+/=]+)\.([A-Za-z0-9+/]{43}=)$/.exec(token);
+  if (!v2) return null;
+  try {
+    const source = JSON.parse(atob(v2[2]));
+    if (!source || !["model,pipeline,provider", "model,pipeline,provider,resolved_model"].includes(Object.keys(source).sort().join()) ||
+        (source.resolved_model !== undefined && (typeof source.resolved_model !== "string" || source.resolved_model.length === 0 || source.resolved_model.length > 160)) ||
+        ![source.provider, source.model, source.pipeline].every((v) => typeof v === "string" && v.length > 0 && v.length <= 160)) return null;
+    return { iat: Number(v2[1]), mac: v2[3], metadata: v2[2], source };
+  } catch { return null; }
+}
+
+async function sign(secret: string, userId: string, sessionId: string, iat: number, items: Counted[], group = 0, source?: Provenance): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
   );
-  const mac = await crypto.subtle.sign("HMAC", key, encoder.encode(canonical(userId, sessionId, iat, items, group)));
-  return `${iat}.${btoa(String.fromCharCode(...new Uint8Array(mac)))}`;
+  const metadata = source ? btoa(JSON.stringify(source)) : "";
+  const message = canonical(userId, sessionId, iat, items, group) + (source ? `|v2|${metadata}` : "");
+  const mac = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+  return `${source ? `v2.${iat}.${metadata}` : iat}.${btoa(String.fromCharCode(...new Uint8Array(mac)))}`;
 }
 
 function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -298,14 +319,14 @@ function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 async function verifyObservation(secret: string, userId: string, sessionId: string, items: Counted[], token: unknown, group = 0): Promise<string | null> {
-  if (typeof token !== "string") return "bad_observation";
-  const match = /^(\d+)\.([A-Za-z0-9+/]{43}=)$/.exec(token);
-  if (!match) return "bad_observation";
-  const iat = Number(match[1]);
+  const parsed = tokenParts(token);
+  if (!parsed) return "bad_observation";
+  const { iat } = parsed;
   if (!Number.isSafeInteger(iat)) return "bad_observation";
+  if (iat > Date.now() + 60_000) return "bad_observation";
   if (Date.now() - iat > OBSERVATION_TTL_MS) return "stale_observation";
-  const expected = (await sign(secret, userId, sessionId, iat, items, group)).split(".")[1];
-  return constantTimeEqual(encoder.encode(expected), encoder.encode(match[2])) ? null : "bad_observation";
+  const expected = await sign(secret, userId, sessionId, iat, items, group, parsed.source ?? undefined);
+  return constantTimeEqual(encoder.encode(expected), encoder.encode(token as string)) ? null : "bad_observation";
 }
 
 // ---- Provider calls + circuit breaker ------------------------------------
@@ -392,7 +413,7 @@ function note(admin: SupabaseClient, a: Attempt) {
   if (runtime?.waitUntil) runtime.waitUntil(write);
 }
 
-type VisionResult = { body: any; provider: string } | { retryAfterMs: number };
+type VisionResult = { body: any; provider: string; model: string } | { retryAfterMs: number };
 
 /**
  * First valid answer wins. Healthy providers go first, cooling ones last. A provider
@@ -437,7 +458,7 @@ async function callVision(admin: SupabaseClient, content: unknown[]): Promise<Vi
         clearTimeout(hedge);
         note(admin, a); // a late answer still spent quota: record it
         if (settled) return;
-        if (a.ok) return finish({ body: a.body, provider: p.name });
+        if (a.ok) return finish({ body: a.body, provider: p.name, model: p.model });
         until.set(p.name, Date.now() + (a.cooldownS ?? 30) * 1000);
         launch(); // failed fast: hand over now, don't wait for the hedge timer
       });
@@ -575,6 +596,9 @@ Deno.serve(async (req: Request) => {
       // the material count, the brand tally only rides along for the analytics.
       const best = new Map<string, Counted>();       // "group|CODE" -> best in that group
       const brandBest = new Map<string, number>();   // "group|CODE|Marca" -> units
+      const sources = new Map<string, Provenance>();
+      let legacyObservations = 0;
+      let signedObservations = 0;
       for (const obs of observations) {
         const group = groupOf(obs?.group);
         if (group === null) return json({ error: "bad_observation" }, 400);
@@ -587,6 +611,11 @@ Deno.serve(async (req: Request) => {
         const observationError = await verifyObservation(serviceKey, user.id, sessionId, items, obs.token, group);
         if (observationError) return json({ error: observationError }, 400);
         if (items.length === 0) continue;
+        const source = tokenParts(obs.token)!.source;
+        if (source) {
+          sources.set(JSON.stringify([source.provider, source.model, source.pipeline, source.resolved_model ?? null]), source);
+          signedObservations++;
+        } else legacyObservations++;
         // Within one frame the same material can arrive split by brand; the count
         // that matters per material is their sum in that frame.
         const perCode = new Map<string, Counted>();
@@ -661,7 +690,14 @@ Deno.serve(async (req: Request) => {
       const { data: det, error: derr } = await admin.rpc("commit_detection", {
         p_generator_id: user.id,
         p_session_id: sessionId,
-        p_model_version: PROVIDERS[0].model,
+        p_model_version: legacyObservations ? "unknown" : sources.size === 1 ? [...sources.values()][0].model : "mixed",
+        p_provenance: {
+          version: 2,
+          attribution: legacyObservations ? "unknown" : sources.size === 1 ? "single" : "mixed",
+          sources: [...sources.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => value),
+          signed_observations: signedObservations,
+          legacy_observations: legacyObservations,
+        },
         p_total_points: totalPoints,
         p_total_value: totalValue,
         p_streak: Number(gp?.streak_multiplier ?? 1),
@@ -762,7 +798,10 @@ Deno.serve(async (req: Request) => {
       status: "preview",
       provider: vision.provider,
       group,
-      token: await sign(serviceKey, user.id, sessionId, Date.now(), counted, group),
+      token: await sign(serviceKey, user.id, sessionId, Date.now(), counted, group,
+        { provider: vision.provider, model: vision.model, pipeline: PIPELINE_VERSION,
+          ...(typeof vision.body.model === "string" && vision.body.model.length > 0 && vision.body.model.length <= 160
+            ? { resolved_model: vision.body.model } : {}) }),
       total_points: items.reduce((s, it) => s + pointsFor(it.code, it.quantity, it.quality), 0),
       items: items.map((it) => ({
         code: it.code, name: it.name, quantity: it.quantity,

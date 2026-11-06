@@ -130,6 +130,19 @@ header when you replay it.
   `GEMINI_API_KEY`); nothing vision-related ships in the APK. The `GROQ_API_KEY` still sitting in
   `local.properties` is a dead leftover from the old client-side call.
 
+### Vision count measurement (live in STAGING since 2026-11-06, not in production)
+
+`supabase/docs/vision-measurement.md` records the research, limitations and test commands.
+`supabase/docs/HANDOFF-claude-vision-measurement.md` is the explicit continuation checklist:
+the SQL and the detector are applied in STAGING; production still has neither.
+Apply `supabase/sql/2026-11-03_vision_measurement.sql` in staging **before** deploying the
+updated detector; its header tracks deployment status. V2 opaque tokens sign the winning
+provider, requested/reported model and pipeline revision. `detections.provenance` is written
+atomically by `commit_detection`; legacy observations remain unknown and mixed sources stay
+separate. Private `ruma_analytics` snapshots preserve IA/declaration/rider counts at first
+completion, before acopio overwrites the live quantity. This measures operational agreement,
+not independent model accuracy. Bump `PIPELINE_VERSION` when prompt/catalog/counting rules change.
+
 ### Points are never client-authoritative
 
 A scan writes a `pending` detection with the points it computed. When the **rider** completes the
@@ -159,6 +172,14 @@ Street paths and the fastest stop order come from `data/StreetRouter` (OSRM on
 routing.openstreetmap.de, no key); `RoutePlanner` (nearest neighbour + 2-opt, crow-flies) is the
 offline fallback. Test accounts for every actor: see the seed in STAGING (`*@maki.test`, `Maki12345!`).
 
+Routing investigation and implementation phases: `docs/ecorider-routing-research.md`.
+Public endpoint probes passed on 2026-11-03, including the exact open Trip parameters.
+The implementation status and verification checklist are in `docs/ecorider-navigation-implementation.md`.
+Navigation now retries stationary failures, invalidates obsolete responses, includes
+rider→active-stop, and supports in-app maneuvers/foreground voice on Android and PWA.
+GPS freshness/accuracy gates guidance; Maps remains optional on Android.
+The 1.3 ETA factor is a static estimate, not live traffic.
+
 ## PWA (`pwa/`)
 
 The web version for people on iPhone, for **both** actors (family and rider), on the same STAGING backend.
@@ -183,7 +204,7 @@ Hobby is non-commercial only: move to Pro or another host before operating with 
   `Color(0x…)` or `fontSize` is a bug: `MakiColors` (roles, gradient stops, tints, the muted
   `On*Soft` text for each gradient), `MakiType` — the scale **by the job** each style does
   (`metricHero`, `cardTitle`, `rowTitle`, `body`, `overline`…), and `MakiSpace` / `MakiRadius` /
-  `MakiElevation` / `MakiGradient` in `MakiDesign.kt`. `MakiFont` is **Inter**, shipped as five
+  `MakiElevation` / `MakiGradient` in `MakiDesign.kt`. `MakiFont` is **DM Sans** and `MakiDisplayFont` **Bricolage Grotesque** (the PWA's fonts), shipped as
   static instances in `res/font` (not the variable file: Compose only applies weight variations
   from API 26 and minSdk is 24, so on Android 7 every weight would collapse to Regular).
   Don't reach for `MaterialTheme.colorScheme` or `MaterialTheme.typography`. Single light theme —

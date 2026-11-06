@@ -14,7 +14,7 @@ const js = stripTypeScriptTypes(brands + "\n" + source + `
 globalThis.helpers = { sign, canonical, verifyObservation, constantTimeEqual, OBSERVATION_TTL_MS, unusableAnswer, normBrand, PROMPT, foldPhotos, brandFromText, evidencedBrand };
 `);
 
-function harness() {
+function harness(visionFetch) {
   const calls = [];
   const state = { error: null };
   const stored = {
@@ -24,6 +24,9 @@ function harness() {
   };
   const admin = {
     from(table) {
+      if (table === "vision_provider_status") return {
+        select: async () => ({ data: [] }), upsert: async () => ({}),
+      };
       assert.ok(["materials", "generator_profiles"].includes(table));
       return { select() { return { eq() {
         if (table === "materials") return { data: [
@@ -39,7 +42,8 @@ function harness() {
     },
   };
   const context = {
-    TextEncoder, Request, Response, crypto: webcrypto, btoa, console,
+    TextEncoder, Request, Response, crypto: webcrypto, btoa, atob, console,
+    fetch: visionFetch, AbortSignal, setTimeout, clearTimeout,
     Deno: { env: { get: (name) => name === "SUPABASE_SERVICE_ROLE_KEY" ? "secret" : "dummy" },
       serve: (handler) => { context.handler = handler; } },
     createClient: (_url, key) => key === "secret" ? admin : {
@@ -99,6 +103,71 @@ test("commit and retry return persisted values through one RPC per request", asy
   assert.equal(h.calls[0].name, "commit_detection");
   assert.equal(h.calls[0].args.p_generator_id, "user-a");
   assert.equal(h.calls[0].args.p_session_id, "session");
+  assert.equal(h.calls[0].args.p_model_version, "unknown");
+  assert.equal(h.calls[0].args.p_provenance.attribution, "unknown");
+});
+
+const sourceFor = (model) => ({ provider: "fallback", model, pipeline: "photo-v1" });
+async function sourced(h, model, group = 0) {
+  return { items, group, token: await h.sign("secret", "user-a", "session", Date.now(), items, group, sourceFor(model)) };
+}
+
+test("preview fallback round-trips through an unchanged client and retains the reported model version", async () => {
+  const requested = [];
+  const h = harness(async (_url, init) => {
+    requested.push(JSON.parse(init.body).model);
+    if (requested.length === 1) return new Response("simulated rate limit", { status: 429 });
+    return Response.json({ model: "resolved-version-123", choices: [{ finish_reason: "stop", message: {
+      content: JSON.stringify({ items: [{ code: "PET", quantity: 2, quality: 0.7, confidence: 0.9 }], spoof: {} }),
+    } }] });
+  });
+  const response = await send(h, { mode: "preview", frame: "offline", motion: { maxGyroDps: 100, samples: 100 } });
+  assert.equal(response.status, 200);
+  const preview = await response.json();
+  assert.equal(preview.status, "preview");
+  assert.equal(requested.length, 2);
+  const args = await persisted(h, [{ items: preview.items, token: preview.token, group: 0 }]);
+  assert.equal(args.p_model_version, requested[1]);
+  assert.equal(args.p_provenance.sources[0].provider, preview.provider);
+  assert.equal(args.p_provenance.sources[0].resolved_model, "resolved-version-123");
+});
+
+test("v2 persists the signed fallback model, ignoring unsigned client claims", async () => {
+  const h = harness();
+  const obs = await sourced(h, "actual-fallback-model");
+  obs.provider = "forged-primary";
+  obs.model = "forged-primary";
+  const args = await persisted(h, [obs, obs]);
+  assert.equal(args.p_model_version, "actual-fallback-model");
+  assert.deepEqual(args.p_provenance, { version: 2, attribution: "single",
+    sources: [sourceFor("actual-fallback-model")], signed_observations: 2, legacy_observations: 0 });
+});
+
+test("mixed models are a separate cohort; any legacy observation makes attribution unknown", async () => {
+  const h = harness();
+  const args = await persisted(h, [await sourced(h, "z", 0), await sourced(h, "a", 1)]);
+  assert.equal(args.p_model_version, "mixed");
+  assert.equal(args.p_provenance.attribution, "mixed");
+  assert.deepEqual(args.p_provenance.sources.map((s) => s.model), ["a", "z"]);
+  const legacy = harness();
+  const unknown = await persisted(legacy, [await sourced(legacy, "a"), await observation(legacy, items, 1)]);
+  assert.equal(unknown.p_model_version, "unknown");
+  assert.equal(unknown.p_provenance.legacy_observations, 1);
+});
+
+test("v2 metadata, downgrade, scope, future timestamp and malformed tokens cannot reach persistence", async () => {
+  const h = harness();
+  const obs = await sourced(h, "actual-model");
+  const parts = obs.token.split(".");
+  const forged = [...parts];
+  forged[2] = btoa(JSON.stringify(sourceFor("forged-model")));
+  const future = await h.sign("secret", "user-a", "session", Date.now() + 120000, items, 0, sourceFor("a"));
+  for (const token of [forged.join("."), `${parts[1]}.${parts[3]}`, future, "v2.123.bad=.bad", "x".repeat(2049)]) {
+    assert.equal((await commit(h, token)).status, 400);
+  }
+  const wrongGroup = await send(h, { mode: "commit", observations: [{ ...obs, group: 1 }] });
+  assert.equal(wrongGroup.status, 400);
+  assert.equal(h.calls.length, 0);
 });
 
 test("invalid observation never reaches persistence; RPC failure uses one error path", async () => {
