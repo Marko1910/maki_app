@@ -1,10 +1,26 @@
 package com.example.maki.ui.components
 
 import android.content.Context
+import android.graphics.Paint
+import android.graphics.drawable.GradientDrawable
+import android.view.MotionEvent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.toArgb
+import com.example.maki.ui.theme.MakiColors
+import com.example.maki.ui.theme.MakiSpace
+import com.example.maki.ui.theme.MakiType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
@@ -22,7 +38,7 @@ import org.osmdroid.views.overlay.Polyline
 import java.io.File
 
 /** A point to drop on the map, with an optional title shown on tap and a pin colour (ARGB). */
-data class OsmMarker(val point: GeoPoint, val label: String? = null, val color: Int? = null)
+data class OsmMarker(val point: GeoPoint, val label: String? = null, val color: Int? = null, val current: Boolean = false)
 
 /**
  * OpenStreetMap (osmdroid) map — no API key required. Renders nothing in
@@ -33,8 +49,8 @@ data class OsmMarker(val point: GeoPoint, val label: String? = null, val color: 
  * tile cache defaults to external storage, which scoped storage denies), and the
  * app needs ACCESS_NETWORK_STATE for its tile downloader to see the connection.
  *
- * The view always frames every marker and the whole [route] — see [frame].
- * [center]/[zoom] only apply when there is nothing to frame.
+ * Frames initially, then respects manual gestures. Navigation can follow the
+ * current-location marker and explicitly recenter without fighting a manual pan.
  */
 @Composable
 fun OsmMap(
@@ -44,15 +60,28 @@ fun OsmMap(
     markers: List<OsmMarker> = emptyList(),
     /** Optional path drawn on the map, in travel order (street geometry or straight legs). */
     route: List<GeoPoint> = emptyList(),
+    followFirst: Boolean = false,
+    recenter: Int = 0,
+    onMapGesture: () -> Unit = {},
 ) {
     if (LocalInspectionMode.current) return
 
     val context = LocalContext.current
+    val gesture by rememberUpdatedState(onMapGesture)
+    var framed by remember { mutableStateOf(false) }
+    var touched by remember { mutableStateOf(false) }
+    var hadRoute by remember { mutableStateOf(false) }
+    var previousRecenter by remember { mutableStateOf(recenter) }
     val mapView = remember {
         ensureOsmConfig(context)
         MapView(context).apply {
             setTileSource(OsmTiles)
             setMultiTouchControls(true)
+            zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
+            setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_MOVE) { touched = true; gesture() }
+                false
+            }
             // 256 px tiles drawn 1:1 on a 3x phone make street names unreadable.
             setTilesScaledToDpi(true)
             controller.setZoom(zoom)
@@ -62,14 +91,22 @@ fun OsmMap(
 
     // Markers and the route arrive after the first composition (the data is
     // loading), so they are applied here rather than baked into the constructor.
-    LaunchedEffect(markers, route) {
+    LaunchedEffect(markers, route, followFirst, recenter) {
         mapView.overlays.clear()
         if (route.size >= 2) {
+            val density = context.resources.displayMetrics.density
+            mapView.overlays.add(Polyline(mapView).apply {
+                setPoints(route)
+                outlinePaint.strokeWidth = 8f * density
+                outlinePaint.strokeCap = Paint.Cap.ROUND
+                outlinePaint.color = MakiColors.Surface.toArgb()
+            })
             mapView.overlays.add(
                 Polyline(mapView).apply {
                     setPoints(route)
-                    outlinePaint.strokeWidth = 10f
-                    outlinePaint.color = ROUTE_COLOR
+                    outlinePaint.strokeWidth = 4f * density
+                    outlinePaint.strokeCap = Paint.Cap.ROUND
+                    outlinePaint.color = MakiColors.Rider.toArgb()
                 }
             )
         }
@@ -79,22 +116,46 @@ fun OsmMap(
                     position = m.point
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     title = m.label
+                    if (m.current) {
+                        val density = context.resources.displayMetrics.density
+                        icon = GradientDrawable().apply {
+                            shape = GradientDrawable.OVAL
+                            setColor(MakiColors.Rider.toArgb())
+                            setStroke((3 * density).toInt(), MakiColors.Surface.toArgb())
+                            setSize((22 * density).toInt(), (22 * density).toInt())
+                        }
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    }
                     // newDrawable(): the default pin is shared by every Marker, so
                     // tinting it in place would repaint all of them.
-                    if (m.color != null) {
+                    if (m.color != null && !m.current) {
                         icon = icon?.constantState?.newDrawable()?.mutate()?.apply { setTint(m.color) } ?: icon
                     }
                 }
             )
         }
-        frame(mapView, markers.map { it.point } + route, center, zoom)
+        val requestedCenter = previousRecenter != recenter
+        if (requestedCenter) { touched = false; previousRecenter = recenter }
+        if (followFirst && !touched) {
+            mapView.controller.setCenter(markers.firstOrNull { it.current }?.point ?: center)
+            if (!framed || requestedCenter) mapView.controller.setZoom(zoom)
+            framed = true
+        } else if (!framed || (!hadRoute && route.size >= 2 && !touched)) {
+            frame(mapView, markers.map { it.point } + route, center, zoom)
+            framed = markers.isNotEmpty() || route.isNotEmpty()
+        }
+        hadRoute = route.size >= 2
         mapView.invalidate()
     }
 
     // clipToBounds: Compose does not clip an AndroidView by itself, and osmdroid
     // paints tiles across the whole canvas — the map covered the screen's header
     // and showed through the cards below it.
-    AndroidView(factory = { mapView }, modifier = modifier.clipToBounds())
+    Box(modifier.clipToBounds()) {
+        AndroidView(factory = { mapView }, modifier = Modifier.matchParentSize())
+        Text("© OpenStreetMap contributors", style = MakiType.caption, color = MakiColors.Text2,
+            modifier = Modifier.align(Alignment.BottomEnd).background(MakiColors.Surface).padding(horizontal = MakiSpace.xs))
+    }
 
     DisposableEffect(Unit) {
         mapView.onResume()
@@ -127,9 +188,6 @@ private fun frame(map: MapView, points: List<GeoPoint>, fallback: GeoPoint, zoom
 /** Two pins a few metres apart would otherwise zoom past the last tile level. */
 private const val MAX_FRAME_ZOOM = 17.5
 private const val FRAME_PADDING_PX = 72
-
-/** Rider blue (#185FA5) for the drawn route. */
-private const val ROUTE_COLOR = 0xFF185FA5.toInt()
 
 /**
  * OSM's standard tiles with our own request policy. osmdroid's built-in MAPNIK

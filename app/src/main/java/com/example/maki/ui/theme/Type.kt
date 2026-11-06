@@ -8,22 +8,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.maki.R
 
-/**
- * Inter, shipped as five static instances.
- *
- * The variable `Inter[opsz,wght].ttf` is one file instead of five, but Compose only
- * applies weight variations from API 26 and this app is minSdk 24: on Android 7 every
- * weight would collapse to Regular and the whole hierarchy with it. The instances were
- * cut at opsz 14 (the optical size Inter is drawn for at UI sizes) and subset to the
- * characters the app actually prints, which is why they are ~96 KB each.
- */
-val MakiFont: FontFamily = FontFamily(
-    Font(R.font.inter_regular, FontWeight.Normal),
-    Font(R.font.inter_medium, FontWeight.Medium),
-    Font(R.font.inter_semibold, FontWeight.SemiBold),
-    Font(R.font.inter_bold, FontWeight.Bold),
-    Font(R.font.inter_extrabold, FontWeight.ExtraBold),
+/** Static instances of the PWA fonts also render correctly on Android 7 (API 24). */
+val MakiFont = FontFamily(
+    Font(R.font.dm_sans_500, FontWeight.Medium),
+    Font(R.font.dm_sans_800, FontWeight.ExtraBold),
 )
+val MakiDisplayFont = FontFamily(Font(R.font.bricolage_800, FontWeight.ExtraBold))
 
 /**
  * The type scale, by the job each style does on screen — not by size.
@@ -47,46 +37,46 @@ object MakiType {
 
     /** The one number a screen is about: balance, month's earnings, points. */
     val metricHero = TextStyle(
-        fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold,
+        fontFamily = MakiDisplayFont, fontWeight = FontWeight.ExtraBold,
         fontSize = 40.sp, lineHeight = 44.sp, letterSpacing = (-1.0).sp,
         fontFeatureSettings = digitos,
     )
 
     /** A figure that leads a card without owning the screen. */
     val metricLarge = TextStyle(
-        fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold,
+        fontFamily = MakiDisplayFont, fontWeight = FontWeight.ExtraBold,
         fontSize = 26.sp, lineHeight = 30.sp, letterSpacing = (-0.6).sp,
         fontFeatureSettings = digitos,
     )
 
     /** The value inside a tile or a list row. */
     val metricMedium = TextStyle(
-        fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold,
+        fontFamily = MakiDisplayFont, fontWeight = FontWeight.ExtraBold,
         fontSize = 20.sp, lineHeight = 25.sp, letterSpacing = (-0.4).sp,
         fontFeatureSettings = digitos,
     )
 
     /** Screen name in the header. */
     val screenTitle = TextStyle(
-        fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold,
-        fontSize = 20.sp, lineHeight = 25.sp, letterSpacing = (-0.4).sp,
+        fontFamily = MakiDisplayFont, fontWeight = FontWeight.ExtraBold,
+        fontSize = 26.sp, lineHeight = 30.sp, letterSpacing = (-0.4).sp,
     )
 
     /** The sentence that greets, or a question the screen asks. */
     val sectionHeading = TextStyle(
-        fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold,
+        fontFamily = MakiDisplayFont, fontWeight = FontWeight.ExtraBold,
         fontSize = 20.sp, lineHeight = 25.sp, letterSpacing = (-0.4).sp,
     )
 
     /** Title of a card. */
     val cardTitle = TextStyle(
-        fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold,
+        fontFamily = MakiDisplayFont, fontWeight = FontWeight.ExtraBold,
         fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = (-0.2).sp,
     )
 
     /** Title of a row inside a list. */
     val rowTitle = TextStyle(
-        fontFamily = MakiFont, fontWeight = FontWeight.ExtraBold,
+        fontFamily = MakiDisplayFont, fontWeight = FontWeight.ExtraBold,
         fontSize = 15.sp, lineHeight = 20.sp, letterSpacing = (-0.2).sp,
     )
 

@@ -265,7 +265,8 @@ fun RiderRoot(
                         vm.arrive()
                         nav.navigate(RiderRoutes.CONFIRM)
                     },
-                    onPosition = vm::onNavPosition,
+                    onPosition = { vm.onNavPosition(it) },
+                    onRetry = vm::retryNavigation,
                     onRelease = { vm.releaseActive { nav.switchTab(RiderRoutes.DASHBOARD, RiderRoutes.DASHBOARD) } },
                 )
             }

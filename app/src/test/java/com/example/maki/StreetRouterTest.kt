@@ -12,6 +12,22 @@ import org.junit.Test
  */
 class StreetRouterTest {
 
+    @Test fun `empty or invalid road geometry is unavailable`() {
+        assertNull(StreetRouter.parse("""{"code":"Ok","routes":[{"distance":10,"duration":10,"geometry":{"coordinates":[]}}]}"""))
+        assertNull(StreetRouter.parse("""{"code":"Ok","routes":[{"distance":10,"duration":10,"geometry":{"coordinates":[[-77,-12],[999,999],[-77.1,-12.1]]}}]}"""))
+    }
+
+    @Test fun `steps preserve maneuver and offset for integrated guidance`() {
+        val body = """{"code":"Ok","routes":[{"distance":300,"duration":60,
+          "geometry":{"coordinates":[[-77,-12],[-77.001,-12.001]]},"legs":[{"steps":[
+          {"distance":100,"name":"Calle A","maneuver":{"type":"depart"}},
+          {"distance":200,"name":"Calle B","maneuver":{"type":"turn","modifier":"right"}}
+          ]}]}]}"""
+        val road = StreetRouter.parse(body)!!
+        assertEquals(0.1, road.steps[1].atKm, 0.00001)
+        assertEquals("Gira a la derecha por Calle B", road.steps[1].instruction)
+    }
+
     @Test
     fun `trip order is re-based onto the stops and follows waypoint_index`() {
         // Input: rider, stop0, stop1. OSRM visits stop1 first (index 1), then stop0 (index 2).
@@ -33,7 +49,7 @@ class StreetRouterTest {
 
     @Test
     fun `plain route has no visit order`() {
-        val body = """{"code":"Ok","routes":[{"distance":990.6,"duration":145.2,"geometry":{"coordinates":[]}}],
+        val body = """{"code":"Ok","routes":[{"distance":990.6,"duration":145.2,"geometry":{"coordinates":[[-76.995,-11.995],[-76.99,-11.99]]}}],
                        "waypoints":[{"waypoint_index":0},{"waypoint_index":0}]}"""
         val r = StreetRouter.parse(body)!!
         assertTrue(r.visitOrder.isEmpty())
@@ -51,7 +67,7 @@ class StreetRouterTest {
         val body = """
             {"code":"Ok",
              "trips":[{"distance":4400.0,"duration":600.0,
-                       "geometry":{"coordinates":[]},
+                       "geometry":{"coordinates":[[-76.995,-11.995],[-76.99,-11.99]]},
                        "legs":[{"distance":1200.0,"duration":180.0},
                                {"distance":3200.0,"duration":420.0}]}],
              "waypoints":[{"waypoint_index":0},{"waypoint_index":1},{"waypoint_index":2}]}

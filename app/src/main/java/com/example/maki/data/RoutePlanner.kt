@@ -14,18 +14,12 @@ import kotlin.math.sqrt
  * Visiting N stops in the best possible order is the Travelling Salesman Problem,
  * which is NP-hard, so this uses the standard two-stage heuristic: build a tour
  * with **nearest neighbour**, then improve it with **2-opt** local search.
- * Nearest neighbour alone lands roughly 10–40% above the optimal tour because its
- * last hops are whatever is left over; 2-opt repeatedly reverses a segment when
- * doing so shortens the tour, which removes the crossings that cause most of that
- * gap. For the 5–20 stops a rider carries it is effectively optimal and runs in
- * microseconds — no network call, no API key, no dependency.
+ * 2-opt repeatedly reverses a segment when doing so shortens the geometric tour.
+ * It is a bounded offline heuristic, without an optimality guarantee.
  *
- * Distances are straight-line (haversine). That is the right call for *ordering*
- * stops a few blocks apart, and wrong for *drawing* the path: streets are one-way,
- * blocked and curved. Turn-by-turn geometry needs a road-network router
- * (OpenRouteService / OSRM); see `planStreetRoute` in the README notes for that
- * upgrade path — it should live behind an Edge Function so the API key never
- * ships in the APK.
+ * Distances are straight-line (haversine), so this does not optimize road time
+ * or account for access restrictions. [StreetRouter] supplies road geometry and
+ * a road-based visiting order when available. Never draw these distances as roads.
  */
 object RoutePlanner {
 

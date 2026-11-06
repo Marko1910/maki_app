@@ -18,24 +18,27 @@ object MakiColors {
     val AdminLight = Color(0xFFEFA14F)
 
     // Surfaces
-    val Bg = Color(0xFFF4F6F5)
+    val Bg = Color(0xFFF7F5EF)
     // The screen is a soft tonal fall, not a flat fill. Four percent of
     // luminance is enough for a surface to read as sitting ON something;
     // more than that and it becomes a decorated page.
-    val BgTop = Color(0xFFFAFCFB)
-    val BgBottom = Color(0xFFDFE7E3)
+    val BgTop = Color(0xFFF7F5EF)
+    val BgBottom = Color(0xFFEDF3EE)
     /** A card as a plane of light: it picks up the colour of what is under it. */
-    val SurfaceGlass = Color(0xBFFFFFFF)
+    val SurfaceGlass = Color(0x94FFFFFF)
     /** The lit top edge of that plane. One hairline, not a border. */
-    val Hairline = Color(0xB3FFFFFF)
+    val Hairline = Color(0xBFFFFFFF)
     val Surface = Color(0xFFFFFFFF)
     /** A card that sits inside another card, where white on white would vanish. */
     val SurfaceSoft = Color(0xFFEDF0EE)
     val Border = Color(0xFFE2E7E4)
 
+    val PageAmber = Color(0xFFF2B84B)
+    val RiderBgBottom = Color(0xFFEBF1F5)
+
     // Text
     val Text = Color(0xFF16211C)
-    val Text2 = Color(0xFF67736C)
+    val Text2 = Color(0xFF5F6B64)
     /** Third level: a code, a timestamp, something present but not read. */
     val Text3 = Color(0xFF6B7670)
     val OnDark = Color(0xFFFFFFFF)

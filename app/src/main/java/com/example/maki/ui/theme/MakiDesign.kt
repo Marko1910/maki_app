@@ -20,10 +20,10 @@ object MakiSpace {
     val xxl: Dp = 28.dp
 
     /** The side margin every screen shares; the one number that aligns everything. */
-    val gutter: Dp = 20.dp
+    val gutter: Dp = 16.dp
 
     /** Vertical gap between cards in a scrolling screen. */
-    val stack: Dp = 12.dp
+    val stack: Dp = 16.dp
 }
 
 /** Corner radii, by the size of the thing being rounded. */
@@ -31,7 +31,7 @@ object MakiRadius {
     val chip: Dp = 8.dp
     val badge: Dp = 14.dp
     val card: Dp = 16.dp
-    val hero: Dp = 22.dp
+    val hero: Dp = 20.dp
     val pill: Dp = 100.dp
 }
 
@@ -41,8 +41,8 @@ object MakiRadius {
  */
 object MakiElevation {
     val flat: Dp = 0.dp
-    val card: Dp = 5.dp
-    val hero: Dp = 10.dp
+    val card: Dp = 0.dp
+    val hero: Dp = 0.dp
 }
 
 /**

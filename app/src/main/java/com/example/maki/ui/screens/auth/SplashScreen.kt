@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import com.example.maki.ui.components.RumaLogo
 import com.example.maki.ui.components.makiScreen
 import com.example.maki.ui.components.makiHero
 import com.example.maki.ui.theme.MAKITheme
@@ -34,18 +35,12 @@ fun SplashScreen() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(MakiSpace.xxl, Alignment.CenterVertically),
     ) {
-        Box(
-            Modifier.size(MakiSpace.xxl * 4)
-                .makiHero(MakiGradient.genDeep, glow = MakiGradient.glowOf(MakiColors.Gen)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Filled.Eco, null, tint = MakiColors.OnDark, modifier = Modifier.size(MakiSpace.xxl * 2))
-        }
+        RumaLogo()
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(MakiSpace.sm),
         ) {
-            Text("Ruma", color = MakiColors.Text, style = MakiType.metricHero)
+            Text("ruma", color = MakiColors.Text, style = MakiType.metricHero)
             Text(
                 "Tu agente de reciclaje inteligente", color = MakiColors.Text2,
                 style = MakiType.body, textAlign = TextAlign.Center,

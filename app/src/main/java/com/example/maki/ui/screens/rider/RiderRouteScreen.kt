@@ -114,7 +114,7 @@ fun RiderRouteScreen(
     onStartNavigation: () -> Unit = {},
     onRetry: () -> Unit = {},
 ) {
-    Column(Modifier.fillMaxSize().makiScreen().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().makiScreen(MakiColors.Rider).statusBarsPadding()) {
         DetailHeader(title = state?.title ?: "Ruta del Día", onBack = onBack)
 
         LazyColumn(
@@ -167,10 +167,9 @@ private fun MiniMap(markers: List<RouteMarkerUi>, path: List<RoutePlanner.LatLng
             zoom = 15.0,
             // The route starts at the rider: without "Tú" the first leg starts nowhere.
             markers = markers.map { OsmMarker(GeoPoint(it.lat, it.lng), it.label, MakiColors.Gen.toArgb()) } +
-                listOfNotNull(here?.let { OsmMarker(GeoPoint(it.lat, it.lng), "Tú", MakiColors.Rider.toArgb()) }),
-            // The street path when the router answered; straight legs in visiting
-            // order otherwise (the order is still optimised, the streets are not).
-            route = path.map { GeoPoint(it.lat, it.lng) }.ifEmpty { markers.map { GeoPoint(it.lat, it.lng) } },
+                listOfNotNull(here?.let { OsmMarker(GeoPoint(it.lat, it.lng), "Tú", current = true) }),
+            // Without a road response, pins remain visible but no road is invented.
+            route = path.map { GeoPoint(it.lat, it.lng) },
         )
     }
 }

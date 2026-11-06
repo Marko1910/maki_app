@@ -82,7 +82,7 @@ fun RiderStatsScreen(
     onBack: () -> Unit = {},
     onRetry: () -> Unit = {},
 ) {
-    Column(Modifier.fillMaxSize().makiScreen().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().makiScreen(MakiColors.Rider).statusBarsPadding()) {
         DetailHeader(title = "Mis Estadísticas", onBack = onBack)
 
         LazyColumn(

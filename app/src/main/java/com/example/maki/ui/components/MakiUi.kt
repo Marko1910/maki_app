@@ -36,6 +36,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -85,7 +87,15 @@ fun Modifier.makiShadow(
  * Thirty screens each painted it themselves, so the day the background stops
  * being one flat colour is thirty edits instead of one.
  */
-fun Modifier.makiScreen(): Modifier = this.background(MakiGradient.screen)
+fun Modifier.makiScreen(accent: Color = MakiColors.Gen): Modifier = this.drawWithCache {
+    val rider = accent == MakiColors.Rider
+    val base = Brush.verticalGradient(listOf(MakiColors.BgTop, if (rider) MakiColors.RiderBgBottom else MakiColors.BgBottom))
+    val light = Brush.radialGradient(listOf(accent.copy(alpha = 0.24f), Color.Transparent),
+        center = Offset(size.width * 0.88f, 0f), radius = size.height * 0.55f)
+    val warmth = Brush.radialGradient(listOf(MakiColors.PageAmber.copy(alpha = 0.15f), Color.Transparent),
+        center = Offset(0f, size.height * 0.34f), radius = size.height * 0.48f)
+    onDrawBehind { drawRect(base); drawRect(light); drawRect(warmth) }
+}
 fun Modifier.makiCard(radius: Dp = MakiRadius.card): Modifier = this
     .makiShadow(radius, MakiElevation.card)
     .clip(RoundedCornerShape(radius))
@@ -124,7 +134,7 @@ fun PrimaryButton(
             .clip(RoundedCornerShape(MakiRadius.badge))
             .background(if (enabled) color else MakiColors.Border)
             .clickable(enabled = enabled, onClickLabel = label, role = Role.Button, onClick = onClick)
-            .heightIn(min = 48.dp)
+            .heightIn(min = 52.dp)
             .padding(vertical = MakiSpace.lg, horizontal = MakiSpace.xl),
         horizontalArrangement = Arrangement.spacedBy(MakiSpace.sm, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
@@ -148,7 +158,7 @@ fun SecondaryButton(
             .alpha(if (enabled) 1f else 0.4f)
             .makiOutlined(color, MakiRadius.badge)
             .clickable(enabled = enabled, onClickLabel = label, role = Role.Button, onClick = onClick)
-            .heightIn(min = 48.dp)
+            .heightIn(min = 52.dp)
             .padding(vertical = MakiSpace.lg, horizontal = MakiSpace.xl),
         horizontalArrangement = Arrangement.spacedBy(MakiSpace.sm, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
@@ -194,8 +204,8 @@ fun MakiNavBar(
 ) {
     Row(
         modifier = Modifier
-            .makiShadow(0.dp, MakiElevation.hero)
-            .background(MakiColors.Surface)
+            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            .background(MakiColors.SurfaceGlass)
             .fillMaxWidth()
             .navigationBarsPadding()
             .padding(horizontal = MakiSpace.md, vertical = MakiSpace.sm),
@@ -210,7 +220,7 @@ fun MakiNavBar(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(MakiRadius.card))
-                    .background(if (selected) accent else Color.Transparent)
+                    .background(if (selected) accent.copy(alpha = 0.10f) else Color.Transparent)
                     .semantics { this.selected = selected }
                     .clickable(onClickLabel = "Ir a ${item.label}", role = Role.Tab) { onSelect(item.route) }
                     .heightIn(min = 48.dp)
@@ -220,12 +230,12 @@ fun MakiNavBar(
             ) {
                 Icon(
                     item.icon, null,
-                    tint = if (selected) Color.White else MakiColors.Text2,
+                    tint = if (selected) accent else MakiColors.Text2,
                     modifier = Modifier.size(22.dp),
                 )
                 Text(
                     item.label,
-                    color = if (selected) Color.White else MakiColors.Text2,
+                    color = if (selected) accent else MakiColors.Text2,
                     style = MakiType.navLabel,
                     maxLines = 1,
                 )
@@ -392,12 +402,13 @@ fun NavRow(
     trailing: String? = null,
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
+    framed: Boolean = true,
     onClick: () -> Unit,
 ) {
     Row(
         modifier.fillMaxWidth()
             .alpha(if (enabled) 1f else 0.45f)
-            .makiCard()
+            .then(if (framed) Modifier.makiCard() else Modifier)
             .then(
                 if (enabled) Modifier.clickable(
                     onClickLabel = "Ir a $title", role = Role.Button, onClick = onClick,
@@ -410,7 +421,7 @@ fun NavRow(
     ) {
         // Cinco filas con cinco insignias de color distinto son un arcoiris,
         // no una jerarquia: el icono orienta, el texto es lo que se lee.
-        IconBadge(icon, MakiColors.Text2, MakiColors.SurfaceSoft)
+        IconBadge(icon, accent, MakiColors.SurfaceGlass)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(MakiSpace.xs)) {
             Text(title, color = MakiColors.Text, style = MakiType.rowTitle)
             if (subtitle != null) {

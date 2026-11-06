@@ -83,7 +83,7 @@ fun RiderConfirmScreen(
     onAdjust: (materialId: String, delta: Int) -> Unit = { _, _ -> },
     onConfirm: () -> Unit = {},
 ) {
-    Column(Modifier.fillMaxSize().makiScreen().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().makiScreen(MakiColors.Rider).statusBarsPadding()) {
         DetailHeader("Confirmar Recolección", onBack)
         LazyColumn(
             Modifier.weight(1f).fillMaxWidth(),

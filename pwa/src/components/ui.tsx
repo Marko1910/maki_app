@@ -141,40 +141,64 @@ export function Bars({ data }: { data: { label: string; value: number; text?: st
 
 /* ---------- Map: Leaflet over OSM, no key ---------- */
 
-export type MapPin = { lat: number; lng: number; label?: string; color?: string };
+export type MapPin = { lat: number; lng: number; label?: string; color?: string; current?: boolean };
 
-export function RumaMap({ pins, path, full, followFirst }: { pins: MapPin[]; path?: [number, number][]; full?: boolean; followFirst?: boolean }) {
+export function RumaMap({ pins, path, full, followFirst, recenter = 0 }: { pins: MapPin[]; path?: [number, number][]; full?: boolean; followFirst?: boolean; recenter?: number }) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
   const framed = useRef(false);
+  const following = useRef(true);
+  const centered = useRef(recenter);
+  const routeFramed = useRef(false);
   useEffect(() => {
     if (!el.current || map.current) return;
     map.current = L.map(el.current, { zoomControl: false }).setView([-12.05, -77.04], 13);
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map.current);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' }).addTo(map.current);
     layer.current = L.layerGroup().addTo(map.current);
-    return () => { map.current?.remove(); map.current = null; framed.current = false; };
+    const manual = () => { following.current = false; };
+    const pinch = (e: TouchEvent) => { if (e.touches.length > 1) manual(); };
+    map.current.on("dragstart", manual);
+    el.current.addEventListener("wheel", manual, { passive: true });
+    el.current.addEventListener("touchstart", pinch, { passive: true });
+    const host = el.current;
+    return () => { host.removeEventListener("wheel", manual); host.removeEventListener("touchstart", pinch); map.current?.remove(); map.current = null; framed.current = false; };
   }, []);
-  const key = JSON.stringify([pins, path?.length]);
+  const key = JSON.stringify([pins, path]);
   useEffect(() => {
     const m = map.current, g = layer.current;
     if (!m || !g) return;
     g.clearLayers();
     const accent = getComputedStyle(el.current!).getPropertyValue("--accent").trim() || "#0F6E56";
-    if (path?.length) L.polyline(path, { color: accent, weight: 5, opacity: 0.9 }).addTo(g);
+    if (path?.length) {
+      L.polyline(path, { color: "white", weight: 9, opacity: 1, interactive: false }).addTo(g);
+      L.polyline(path, { color: accent, weight: 5, opacity: 1, interactive: false }).addTo(g);
+    }
     for (const p of pins) {
-      const icon = L.divIcon({ className: "", iconSize: [34, 34], iconAnchor: [17, 17], html: `<div class="pin" style="background:${p.color ?? accent}">${p.label ?? ""}</div>` });
-      L.marker([p.lat, p.lng], { icon, keyboard: false }).addTo(g);
+      const node = document.createElement("div");
+      node.className = p.current ? "pin pin-current" : "pin";
+      node.style.background = p.color ?? accent;
+      node.textContent = p.current ? "" : p.label && p.label.length <= 3 ? p.label : "•";
+      const icon = L.divIcon({ className: "map-marker", iconSize: [34, 34], iconAnchor: [17, 17], html: node });
+      const tooltip = document.createElement("span"); tooltip.textContent = p.label ?? "Destino";
+      L.marker([p.lat, p.lng], { icon, title: p.label ?? "Destino", alt: p.label ?? "Destino", keyboard: true }).bindTooltip(tooltip).addTo(g);
     }
     const pts: [number, number][] = [...pins.map((p) => [p.lat, p.lng] as [number, number]), ...(path ?? [])];
-    if (pts.length && !framed.current) {
+    if (centered.current !== recenter) { following.current = true; centered.current = recenter; framed.current = false; }
+    const current = pins.find((p) => p.current) ?? pins[0];
+    if (followFirst && following.current && current) {
+      if (!framed.current) m.setView([current.lat, current.lng], 16);
+      else m.panTo([current.lat, current.lng], { animate: false });
+      framed.current = true;
+    } else if (pts.length && (!framed.current || (!routeFramed.current && path?.length && following.current))) {
       if (pts.length === 1) m.setView(pts[0], 15);
       else m.fitBounds(L.latLngBounds(pts), { padding: [36, 36], maxZoom: 16 });
       framed.current = true;
-    } else if (followFirst && pins[0]) m.panTo([pins[0].lat, pins[0].lng]);
+    }
+    routeFramed.current = !!path?.length;
     const resize = setTimeout(() => m.invalidateSize(), 60); // Leaving the screen first must not touch a removed map.
     return () => clearTimeout(resize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, recenter, followFirst]);
   return <div ref={el} className={`map ${full ? "map-full" : ""}`} />;
 }

@@ -97,7 +97,7 @@ fun RiderRankingScreen(
     onBack: () -> Unit = {},
     onRetry: () -> Unit = {},
 ) {
-    Column(Modifier.fillMaxSize().makiScreen().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().makiScreen(MakiColors.Rider).statusBarsPadding()) {
         DetailHeader(
             title = state?.zone ?: "Ranking de riders",
             onBack = onBack,

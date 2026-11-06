@@ -84,7 +84,7 @@ fun RiderHistoryScreen(
     val filters = state?.filters ?: RiderHistoryUiState().filters
     val sections = state?.let { filterSections(it.sections, selectedFilter) }
 
-    Column(Modifier.fillMaxSize().makiScreen().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().makiScreen(MakiColors.Rider).statusBarsPadding()) {
         DetailHeader(title = "Mi Historial", onBack = onBack)
 
         Row(

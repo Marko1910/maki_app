@@ -38,6 +38,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import com.example.maki.ui.components.RumaLogo
+import androidx.compose.ui.unit.dp
 import com.example.maki.ui.components.makiScreen
 import com.example.maki.ui.components.IconBadge
 import com.example.maki.ui.components.MakiError
@@ -63,24 +65,23 @@ fun LoginScreen(
 ) {
     val accent = if (vm.role == "eco_rider") MakiColors.Rider else MakiColors.Gen
     Column(
-        Modifier.fillMaxSize().makiScreen().statusBarsPadding().navigationBarsPadding().imePadding()
+        Modifier.fillMaxSize().makiScreen(accent).statusBarsPadding().navigationBarsPadding().imePadding()
             .verticalScroll(rememberScrollState())
             .padding(start = MakiSpace.gutter, end = MakiSpace.gutter, top = MakiSpace.sm, bottom = MakiSpace.xxl),
         verticalArrangement = Arrangement.spacedBy(MakiSpace.stack),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(MakiSpace.md), verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(Icons.Filled.Eco, accent, accent.copy(alpha = 0.12f))
-            Text("Ruma", color = MakiColors.Text, style = MakiType.cardTitle)
-        }
-
-        Column(verticalArrangement = Arrangement.spacedBy(MakiSpace.sm)) {
-            Text("Bienvenido de vuelta", color = MakiColors.Text, style = MakiType.screenTitle)
-            Text("Elige cómo entras y sigue reciclando", color = MakiColors.Text2, style = MakiType.body)
+        Column(Modifier.fillMaxWidth().padding(vertical = MakiSpace.lg),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(MakiSpace.lg)) {
+            RumaLogo(size = 96.dp)
+            Text("Bienvenido de vuelta", color = MakiColors.Text, style = MakiType.screenTitle,
+                textAlign = TextAlign.Center)
+            Text("Elige cómo entras y sigue reciclando", color = MakiColors.Text2, style = MakiType.body,
+                textAlign = TextAlign.Center)
         }
 
         // Entering is role-shaped: the two apps look nothing alike, and picking
         // here fills in that role's demo account so a tester only taps "Iniciar sesión".
-        SectionLabel("Tu rol")
         RolePicker(selected = vm.role, onSelect = vm::selectRole)
 
         SoftCard(gap = MakiSpace.lg) {
@@ -103,6 +104,8 @@ fun LoginScreen(
 
             if (vm.loading) MakiLoading("Ingresando…", accent = accent)
 
+        }
+
             PrimaryButton(
                 if (vm.loading) "Ingresando…" else "Iniciar sesión",
                 Modifier.fillMaxWidth(),
@@ -110,7 +113,6 @@ fun LoginScreen(
                 color = accent,
                 onClick = { vm.signIn(onSuccess) },
             )
-        }
 
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(MakiSpace.md)) {
             Box(Modifier.weight(1f).height(MakiSpace.xs / 4).background(MakiColors.Border))
@@ -164,23 +166,17 @@ private fun RoleOption(
     on: Boolean,
     onClick: () -> Unit,
 ) {
-    Column(
-        modifier
-            .makiOutlined(if (on) accent else MakiColors.Border)
-            .background(if (on) tint else MakiColors.Surface)
+    Row(
+        modifier.makiOutlined(if (on) accent else MakiColors.Border)
+            .background(if (on) tint else Color.Transparent)
             .clickable(onClickLabel = "Entrar como $title", role = Role.RadioButton, onClick = onClick)
-            .heightIn(min = MakiSpace.xl + MakiSpace.xxl)
-            .padding(horizontal = MakiSpace.md, vertical = MakiSpace.md)
-            .semantics {
-                contentDescription = "Entrar como $title. $subtitle"
-                this.selected = on
-            },
-        verticalArrangement = Arrangement.spacedBy(MakiSpace.sm),
+            .heightIn(min = 52.dp).padding(horizontal = MakiSpace.md, vertical = MakiSpace.sm)
+            .semantics { contentDescription = "Entrar como $title. $subtitle"; this.selected = on },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(MakiSpace.sm),
     ) {
         Icon(icon, null, tint = accent, modifier = Modifier.size(MakiSpace.xl))
-        Text(title, color = MakiColors.Text, style = MakiType.cardTitle)
-        Text(subtitle, color = MakiColors.Text2, style = MakiType.label)
-        StatusChip(if (on) "Seleccionado" else "Elegir", if (on) accent else MakiColors.Text2)
+        Text(title, color = if (on) accent else MakiColors.Text2, style = MakiType.button)
     }
 }
 

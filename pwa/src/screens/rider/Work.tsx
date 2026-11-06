@@ -1,8 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useRoadNavigation } from "../../lib/useRoadNavigation";
+import { streetRoute } from "../../lib/navigation";
 import { Empty, Failure, Icon, Loading, NavRow, RumaMap, Stepper, TopBar, useToast, type MapPin } from "../../components/ui";
 import { acceptPickup, completePickup, confirmQuantities, humanize, loadAvailablePickups, loadMyAssignedPickups, loadMyName, loadMyRiderProfile, loadNotifications, loadRiderEarnings, myId, releasePickup, setPickupStatus, setRiderAvailability, setRiderShiftStart, type Row } from "../../lib/api";
-import { ago, clock, distanceKm, here, itemsLine, meters, pickupLatLng, sameDay, soles, streetRoute, streetTrip, useAsync, useInterval, useWakeLock, VEHICLE, type LatLng, type RoadRoute } from "../../lib/util";
+import { ago, clock, distanceKm, here, itemsLine, meters, pickupLatLng, sameDay, soles, streetTrip, useAsync, useInterval, useWakeLock, VEHICLE, type LatLng, type RoadRoute } from "../../lib/util";
 
 /* ---------- Rider state shared by the whole graph ---------- */
 
@@ -80,7 +82,7 @@ export function RiderProvider({ children }: { children: ReactNode }) {
   }, [d, setOnShift]);
 
   const assigned = useMemo(() => d?.assigned ?? [], [d]);
-  const active = assigned.find((p) => p.id === selectedId) ?? assigned[0] ?? null;
+  const active = selectedId != null ? assigned.find((p) => p.id === selectedId) ?? null : assigned[0] ?? null;
   const value: Rider = {
     profile: d?.profile ?? null, name: d?.name ?? null, assigned, available: d?.available ?? [], todayEarned: d?.todayEarned ?? 0, monthEarned: d?.monthEarned ?? 0,
     unread: d?.unread ?? false, loading: load.loading && !d, error: load.error, onShift, origin, selectedId, refresh, select, setOnShift, active, completed, setCompleted,
@@ -212,19 +214,38 @@ export function Board() {
 export function RouteScreen() {
   const nav = useNavigate();
   const r = useRider();
-  const [road, setRoad] = useState<RoadRoute | null>(null);
+  const [plan, setPlan] = useState<{ key: string; road: RoadRoute; ids: string[] } | null>(null);
+  const [routeError, setRouteError] = useState(false);
+  const [retry, setRetry] = useState(0);
   const stops = r.assigned;
   const points = useMemo(() => stops.flatMap((p) => { const l = pickupLatLng(p); return l ? [{ p, l }] : []; }), [stops]);
-  const key = points.map((x) => x.p.id).join() + (r.origin ? "@" : "");
+  const key = JSON.stringify([points.map((x) => [x.p.id, x.p.status, x.l]), r.origin, r.profile?.vehicle_type]);
+  const road = plan?.key === key ? plan.road : null;
   useEffect(() => {
-    if (r.origin && points.length) void streetTrip(r.origin, points.map((x) => x.l), r.profile?.vehicle_type).then(setRoad);
-    else setRoad(null);
+    const controller = new AbortController();
+    setRouteError(false);
+    if (!r.origin || !points.length) { setPlan(null); return; }
+    const origin = r.origin;
+    const build = async () => {
+      const head = points.find((x) => ["en_route", "arriving", "collecting"].includes(x.p.status));
+      const rest = points.filter((x) => x !== head);
+      const trip = rest.length ? await streetTrip(head?.l ?? origin, rest.map((x) => x.l), r.profile?.vehicle_type, controller.signal) : null;
+      if (controller.signal.aborted) return;
+      const order = trip ? trip.order.map((i) => rest[i]) : rest;
+      const ordered = [...(head ? [head] : []), ...order];
+      const full = head ? await streetRoute([origin, ...ordered.map((x) => x.l)], r.profile?.vehicle_type, controller.signal) : trip;
+      if (controller.signal.aborted) return;
+      if (full) setPlan({ key, road: full, ids: ordered.map((x) => x.p.id) });
+      else { setPlan(null); setRouteError(true); }
+    };
+    void build();
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, retry]);
   // Street order when OSRM answered; otherwise the order the stops came in.
-  const ordered = road && road.order.length === points.length ? road.order.map((i) => points[i].p) : stops;
+  const ordered = road && plan ? [...plan.ids.map((id) => stops.find((p) => p.id === id)).filter((p): p is Row => !!p), ...stops.filter((p) => !plan.ids.includes(p.id))] : stops;
   const earn = stops.reduce((s, p) => s + (p.rider_earnings ?? 0), 0);
-  const finish = road ? new Date(Date.now() + road.minutes * 60000) : null;
+  const finish = road ? new Date(Date.now() + (road.minutes + stops.length * 4) * 60000) : null;
   const pins: MapPin[] = [...(r.origin ? [{ ...r.origin, label: "Tú" }] : []), ...ordered.flatMap((p, i) => { const l = pickupLatLng(p); return l ? [{ ...l, label: String(i + 1), color: "#16211C" }] : []; })];
   return (
     <main className="screen with-nav">
@@ -232,13 +253,16 @@ export function RouteScreen() {
       {r.loading ? <Loading text="Cargando tu ruta…" /> : r.error ? <Failure text={r.error} retry={() => void r.refresh()} /> : !stops.length ? <Empty title="Sin paradas por ahora" text="Toma un recojo desde el tablero y aparecerá aquí, en orden de ruta." icon="route" /> : <>
         {pins.length > 0 && <RumaMap pins={pins} path={road?.path} />}
         <section className="hero">
-          <p className="t-over">{road ? "Ruta más rápida por calles" : "Tu ruta"} · {stops.length} parada{stops.length > 1 ? "s" : ""}</p>
+          <p className="t-over">{road ? "Ruta por calles · orden sugerido" : "Tu ruta"} · {stops.length} parada{stops.length > 1 ? "s" : ""}</p>
           {finish && <p className="t-title">Terminas ~{clock(finish)}</p>}
           <div className="grid2 hero-rule">
             <div><p className="soft t-small">Distancia</p><p className="t-card">{road ? `${road.km.toFixed(1)} km` : "—"}</p></div>
             <div><p className="soft t-small">Ganancia estimada</p><p className="t-card">{soles(earn)}</p></div>
           </div>
         </section>
+        {routeError && <Failure text="No se pudo calcular el recorrido por calles." retry={() => setRetry((n) => n + 1)} />}
+        {!r.origin && <p className="muted">Necesitamos tu ubicación para calcular el recorrido.</p>}
+        {points.length < stops.length && <p className="muted">Hay paradas sin ubicación. Permanecen en la lista, pero no se incluyen en el trazado.</p>}
         <p className="t-over">Paradas de tu ruta</p>
         <div className="glass list">{ordered.map((p, i) => <div key={p.id}>
           <span className="badge" style={{ borderRadius: "50%", background: "var(--accent)", color: "#fff", border: 0, width: 32, height: 32 }}>{i + 1}</span>
@@ -254,20 +278,20 @@ export function RouteScreen() {
 /* ---------- Navigation ---------- */
 
 const ARRIVING_KM = 0.15;
-const REROUTE_KM = 0.04;
 
 export function Navigation() {
   const nav = useNavigate();
   const toast = useToast();
   const r = useRider();
   const p = r.active;
-  const [pos, setPos] = useState<LatLng | null>(r.origin);
-  const [road, setRoad] = useState<RoadRoute | null>(null);
   const [voice, setVoice] = useState(false);
   const [busy, setBusy] = useState(false);
-  const routedFrom = useRef<LatLng | null>(null);
+  const [recenter, setRecenter] = useState(0);
+  const spoken = useRef<string | null>(null);
   const flagged = useRef<Set<string>>(new Set());
   const dest = p ? pickupLatLng(p) : null;
+  const guidance = useRoadNavigation(p?.id ?? "", dest, r.profile?.vehicle_type);
+  const { position: pos, road, step, stepMeters } = guidance;
   useWakeLock(true);
 
   // Pin the stop and flip it to en_route once, on entering.
@@ -281,33 +305,42 @@ export function Navigation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p?.id]);
 
-  useEffect(() => {
-    if (!("geolocation" in navigator)) return;
-    const id = navigator.geolocation.watchPosition((g) => setPos({ lat: g.coords.latitude, lng: g.coords.longitude }), () => undefined, { enableHighAccuracy: true, maximumAge: 5000 });
-    return () => navigator.geolocation.clearWatch(id);
-  }, []);
-
   const km = pos && dest ? distanceKm(pos, dest) : null;
   useEffect(() => {
     if (!pos || !dest || !p) return;
     if (p.status === "en_route" && km != null && km <= ARRIVING_KM && !flagged.current.has(`near:${p.id}`)) {
       flagged.current.add(`near:${p.id}`);
-      setPickupStatus(p.id, "arriving").then(() => r.refresh()).catch(() => undefined);
+      const flag = `near:${p.id}`;
+      setPickupStatus(p.id, "arriving").then(() => r.refresh()).catch(() => flagged.current.delete(flag));
     }
-    if (routedFrom.current && distanceKm(routedFrom.current, pos) < REROUTE_KM) return;
-    routedFrom.current = pos;
-    void streetRoute([pos, dest], r.profile?.vehicle_type).then((x) => { if (x) setRoad(x); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pos?.lat, pos?.lng, dest?.lat, dest?.lng, p?.status]);
 
   const say = (on: boolean) => {
+    if (!("speechSynthesis" in window)) { toast("La voz no está disponible en este navegador."); return; }
     setVoice(on);
-    if (on && "speechSynthesis" in window && p) {
-      const u = new SpeechSynthesisUtterance(`Vas a ${familyOf(p)}, ${addressOf(p)}. ${road ? `Llegas en ${road.minutes} minutos.` : ""}`);
+    speechSynthesis.cancel();
+    if (on) {
+      spoken.current = null;
+      // A tap starts the speech engine on iOS; subsequent guidance is foreground-only.
+      const u = new SpeechSynthesisUtterance("Guía por voz activada. Mantén Ruma abierta durante el recorrido.");
       u.lang = "es-PE";
       speechSynthesis.speak(u);
-    } else if ("speechSynthesis" in window) speechSynthesis.cancel();
+    }
   };
+  useEffect(() => {
+    if (!voice || !step || stepMeters == null || stepMeters > 150 || spoken.current === step.key || document.visibilityState === "hidden") return;
+    const u = new SpeechSynthesisUtterance(`En ${stepMeters} metros, ${step.instruction}`);
+    u.lang = "es-PE";
+    u.onerror = (event) => { if (event.error === "interrupted" || event.error === "canceled") return; setVoice(false); toast("No se pudo reproducir la voz. Sigue las indicaciones en pantalla."); };
+    speechSynthesis.speak(u);
+    spoken.current = step.key;
+  }, [voice, step?.key, stepMeters]);
+  useEffect(() => {
+    const stop = () => { if (document.visibilityState === "hidden" && "speechSynthesis" in window) speechSynthesis.cancel(); };
+    document.addEventListener("visibilitychange", stop);
+    return () => { document.removeEventListener("visibilitychange", stop); if ("speechSynthesis" in window) speechSynthesis.cancel(); };
+  }, []);
   const arrive = async () => {
     if (!p) return;
     setBusy(true);
@@ -324,28 +357,34 @@ export function Navigation() {
   if (r.loading) return <main className="screen"><Loading /></main>;
   if (!p) return <main className="screen"><TopBar title="Navegación" /><Empty title="No hay un recojo en curso" text="Toma una solicitud del tablero para empezar a navegar." icon="route" /></main>;
   const index = r.assigned.findIndex((x) => x.id === p.id) + 1;
-  const pins: MapPin[] = [...(pos ? [{ ...pos, label: "Tú" }] : []), ...(dest ? [{ ...dest, color: "#16211C" }] : [])];
-  const eta = road ? new Date(Date.now() + road.minutes * 60000) : null;
+  const pins: MapPin[] = [...(pos ? [{ ...pos, label: "Tú", current: true }] : []), ...(dest ? [{ ...dest, label: "Destino" }] : [])];
+  const eta = guidance.remainingMinutes != null && pos ? new Date(Date.now() + guidance.remainingMinutes * 60000) : null;
+  const status = !dest ? "Destino sin ubicación" : guidance.gpsMessage ? "Esperando ubicación" : guidance.error ? "Ruta sin actualizar" : !road ? "Calculando ruta" : "Sigue la ruta marcada";
   return (
-    <main>
-      <RumaMap pins={pins} path={road?.path} full followFirst />
-      <div className="float">
-        <button className="icon-btn" aria-label="Volver" onClick={() => nav(-1)}><Icon name="back" /></button>
-        <span className="chip">Parada {index} de {r.assigned.length}</span>
-        <span className="chip chip-accent" style={{ background: "rgba(255,255,255,.85)" }}><i className="pulse" /> {p.status === "arriving" ? "Llegando" : "En camino"}</span>
-        <button className="chip" style={{ minHeight: 40 }} aria-pressed={voice} onClick={() => say(!voice)}><Icon name="sound" size={16} /> Guía por voz {voice ? "sí" : "no"}</button>
+    <main className="nav-screen">
+      <div className="nav-map">
+        <RumaMap pins={pins} path={road?.path} followFirst recenter={recenter} />
+        <div className="nav-heading">
+          <button className="icon-btn" aria-label="Volver" onClick={() => nav(-1)}><Icon name="back" /></button>
+          <div className="nav-direction" role="status">
+            <span className="t-small">{stepMeters != null ? `En ${stepMeters} m` : `Parada ${index} de ${r.assigned.length}`}</span>
+            <p className="t-row">{step?.instruction ?? status}</p>
+          </div>
+        </div>
+        <button className="nav-center btn btn-neutral" disabled={!pos} onClick={() => setRecenter((n) => n + 1)} aria-label="Centrar mapa en mi ubicación"><Icon name="pin" size={18} /> Centrar</button>
       </div>
-      <section className="sheet">
-        <div className="grab" />
-        <p className="t-over">Destino</p>
+      <section className="nav-summary">
+        <div className="row"><p className="t-over">Destino · {index}/{r.assigned.length}</p><button className="btn-text" aria-pressed={voice} onClick={() => say(!voice)}><Icon name="sound" size={18} />{voice ? "Silenciar" : "Activar voz"}</button></div>
         <h1 className="t-card">{familyOf(p)}</h1>
         <p>{addressOf(p)}</p>
         {(p.address?.reference || p.notes) && <p className="muted t-small">{p.address?.reference ?? p.notes}</p>}
         {!dest && <p className="danger t-small">Esta parada no tiene ubicación en el mapa. Llama a la familia.</p>}
-        <div className="grid2">
-          <div className="glass" style={{ padding: 12 }}><p className="muted t-small">Distancia</p><p className="t-row">{km != null ? meters(road?.km ?? km) : "—"}</p></div>
-          <div className="glass" style={{ padding: 12 }}><p className="muted t-small">Llegada</p><p className="t-row">{eta ? clock(eta) : "—"}</p></div>
+        {(guidance.gpsMessage || guidance.error) && <div className="nav-notice" role="status"><p>{guidance.gpsMessage ?? guidance.error}</p><button className="btn-text" disabled={guidance.loading} onClick={guidance.retry}>Reintentar</button></div>}
+        <div className="nav-metrics">
+          <div><p className="muted t-small">Por calles</p><p className="t-row">{guidance.remainingKm != null ? meters(guidance.remainingKm) : "—"}</p></div>
+          <div><p className="muted t-small">Llegada estimada</p><p className="t-row">{eta ? clock(eta) : "—"}</p></div>
         </div>
+        {voice && <p className="muted t-small">Mantén Ruma abierta para escuchar las indicaciones.</p>}
         <div className="row">
           {p.generator?.phone && <a className="btn btn-secondary" style={{ width: "auto", flex: "none" }} href={`tel:${p.generator.phone}`}><Icon name="phone" /> Llamar</a>}
           <button className="btn btn-primary" disabled={busy} onClick={() => void arrive()}><Icon name="pin" /> He llegado al punto</button>

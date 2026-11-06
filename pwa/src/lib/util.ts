@@ -117,35 +117,4 @@ export function useWakeLock(active: boolean) {
   }, [active]);
 }
 
-/* ---------- Street routes: OSRM, with crow-flies as the offline fallback ---------- */
-
-export type RoadRoute = { path: [number, number][]; km: number; minutes: number; order: number[] };
-const TRAFFIC_FACTOR = 1.3;
-const profile = (v?: string | null) => (v === "bicicleta" || v === "bici" || v === "triciclo" ? "routed-bike" : v === "a_pie" ? "routed-foot" : "routed-car");
-
-async function osrm(service: "route" | "trip", points: LatLng[], vehicle?: string | null, extra = ""): Promise<Row | null> {
-  try {
-    const coords = points.map((p) => `${p.lng},${p.lat}`).join(";");
-    const r = await fetch(`https://routing.openstreetmap.de/${profile(vehicle)}/${service}/v1/driving/${coords}?overview=full&geometries=geojson${extra}`);
-    const j = await r.json();
-    return j.code === "Ok" ? j : null;
-  } catch { return null; }
-}
-const toRoad = (leg: Row, order: number[]): RoadRoute => ({
-  path: leg.geometry.coordinates.map((c: number[]) => [c[1], c[0]]),
-  km: leg.distance / 1000,
-  minutes: Math.max(1, Math.ceil((leg.duration * TRAFFIC_FACTOR) / 60)),
-  order,
-});
-export async function streetRoute(points: LatLng[], vehicle?: string | null): Promise<RoadRoute | null> {
-  const j = await osrm("route", points, vehicle);
-  return j ? toRoad(j.routes[0], points.map((_, i) => i)) : null;
-}
-/** Fastest visiting order from [start]; order holds the stops' original indexes. */
-export async function streetTrip(start: LatLng, stops: LatLng[], vehicle?: string | null): Promise<RoadRoute | null> {
-  if (stops.length < 2) return stops.length ? streetRoute([start, stops[0]], vehicle) : null;
-  const j = await osrm("trip", [start, ...stops], vehicle, "&source=first&destination=any&roundtrip=false");
-  if (!j) return null;
-  const order = (j.waypoints as Row[]).slice(1).map((w, i) => ({ i, at: w.waypoint_index as number })).sort((a, b) => a.at - b.at).map((o) => o.i);
-  return toRoad(j.trips[0], order);
-}
+export { streetRoute, streetTrip, type RoadRoute } from "./navigation";

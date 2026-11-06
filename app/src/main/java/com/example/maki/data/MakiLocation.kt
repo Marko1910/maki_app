@@ -36,6 +36,11 @@ object MakiLocation {
      * a few hundred metres apart.
      */
     fun lastKnown(context: Context, maxAgeMs: Long = Long.MAX_VALUE): RoutePlanner.LatLng? {
+        val fix = lastKnownFix(context, maxAgeMs) ?: return null
+        return RoutePlanner.LatLng(fix.latitude, fix.longitude)
+    }
+
+    private fun lastKnownFix(context: Context, maxAgeMs: Long): Location? {
         if (!hasPermission(context)) return null
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
         val fix = runCatching {
@@ -44,8 +49,53 @@ object MakiLocation {
                 .maxByOrNull { it.time }
         }.getOrNull() ?: return null
         if (System.currentTimeMillis() - fix.time > maxAgeMs) return null
-        return RoutePlanner.LatLng(fix.latitude, fix.longitude)
+        return fix
     }
+
+    data class NavigationFix(val point: RoutePlanner.LatLng, val accuracyMeters: Float, val time: Long)
+
+    /** Navigation keeps accuracy and age; an imprecise fix must not trigger turns or arrival. */
+    suspend fun navigationFix(context: Context): NavigationFix? {
+        if (!hasPermission(context)) return null
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+        val location = lastKnownFix(context, 3_000)?.takeIf { it.hasAccuracy() && it.accuracy <= 60 }
+            ?: withTimeoutOrNull(8_000) { requestNavigationFix(lm) } ?: return null
+        if (System.currentTimeMillis() - location.time > 15_000 || !location.hasAccuracy()) return null
+        return NavigationFix(RoutePlanner.LatLng(location.latitude, location.longitude), location.accuracy, location.time)
+    }
+
+    /** Race enabled sources: satellite acquisition indoors must not block a precise network fix. */
+    @Suppress("MissingPermission")
+    private suspend fun requestNavigationFix(lm: LocationManager): Location? =
+        suspendCancellableCoroutine { cont ->
+            val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+                .filter { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
+            if (providers.isEmpty()) { cont.resume(null); return@suspendCancellableCoroutine }
+            val listener = object : android.location.LocationListener {
+                override fun onLocationChanged(location: Location) {
+                    if (!location.hasAccuracy() || location.accuracy > 60 ||
+                        System.currentTimeMillis() - location.time > 15_000) return
+                    runCatching { lm.removeUpdates(this) }
+                    if (cont.isActive) cont.resume(location)
+                }
+                @Deprecated("Required on API < 29")
+                override fun onStatusChanged(p: String?, s: Int, e: android.os.Bundle?) {}
+                override fun onProviderDisabled(p: String) {}
+                override fun onProviderEnabled(p: String) {}
+            }
+            cont.invokeOnCancellation { runCatching { lm.removeUpdates(listener) } }
+            var registered = false
+            providers.forEach { provider ->
+                if (cont.isActive) {
+                    registered = runCatching {
+                        lm.requestLocationUpdates(provider, 0L, 0f, listener, android.os.Looper.getMainLooper())
+                    }.isSuccess || registered
+                }
+            }
+            // Covers cancellation racing with listener registration.
+            if (!cont.isActive) runCatching { lm.removeUpdates(listener) }
+            else if (!registered) cont.resume(null)
+        }
 
     /**
      * A fix good enough to register a home on: the cached one when it exists (and
@@ -60,11 +110,11 @@ object MakiLocation {
         lastKnown(context, maxAgeMs)?.let { return it }
         if (!hasPermission(context)) return null
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
-        return withTimeoutOrNull(timeoutMs) { requestSingleFix(lm, context) }
+        return withTimeoutOrNull(timeoutMs) { requestSingleFix(lm, context) }?.let { RoutePlanner.LatLng(it.latitude, it.longitude) }
     }
 
     @Suppress("MissingPermission")   // hasPermission() gates every call site above
-    private suspend fun requestSingleFix(lm: LocationManager, context: Context): RoutePlanner.LatLng? =
+    private suspend fun requestSingleFix(lm: LocationManager, context: Context): Location? =
         suspendCancellableCoroutine { cont ->
             val provider = when {
                 lm.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
@@ -74,7 +124,7 @@ object MakiLocation {
             if (provider == null) { cont.resume(null); return@suspendCancellableCoroutine }
 
             val deliver: (Location?) -> Unit = { loc ->
-                if (cont.isActive) cont.resume(loc?.let { RoutePlanner.LatLng(it.latitude, it.longitude) })
+                if (cont.isActive) cont.resume(loc)
             }
             runCatching {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {

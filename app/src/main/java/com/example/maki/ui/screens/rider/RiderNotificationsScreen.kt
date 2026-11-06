@@ -81,7 +81,7 @@ fun RiderNotificationsScreen(
 ) {
     val hasUnread = items?.any { it.unread } == true
 
-    Column(Modifier.fillMaxSize().makiScreen().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().makiScreen(MakiColors.Rider).statusBarsPadding()) {
         DetailHeader(
             title = "Notificaciones",
             onBack = onBack,

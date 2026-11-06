@@ -87,7 +87,7 @@ fun RiderProfileScreen(
     error: String? = null,
     onRetry: () -> Unit = {},
 ) {
-    Column(Modifier.fillMaxSize().makiScreen().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().makiScreen(MakiColors.Rider).statusBarsPadding()) {
         DetailHeader(title = "Mi perfil", onBack = onBack)
         if (state == null) {
             Column(

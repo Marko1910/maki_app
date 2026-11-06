@@ -62,6 +62,9 @@ import com.example.maki.ui.components.PrimaryButton
 import com.example.maki.ui.components.ProgressTrack
 import com.example.maki.ui.components.SectionLabel
 import com.example.maki.ui.components.StatusChip
+import androidx.compose.material3.HorizontalDivider
+import com.example.maki.ui.components.makiHero
+import com.example.maki.ui.theme.MakiGradient
 import com.example.maki.ui.components.makiCard
 import com.example.maki.ui.theme.MAKITheme
 import com.example.maki.ui.theme.MakiColors
@@ -124,30 +127,32 @@ fun RiderDashboardScreen(
 ) {
     var pickTime by remember { mutableStateOf(false) }
     Column(
-        Modifier.fillMaxSize().makiScreen().statusBarsPadding()
+        Modifier.fillMaxSize().makiScreen(MakiColors.Rider).statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(start = MakiSpace.gutter, end = MakiSpace.gutter, top = MakiSpace.sm, bottom = MakiSpace.xl),
         verticalArrangement = Arrangement.spacedBy(MakiSpace.stack),
     ) {
         Header(state, onBell = { onNavigate(RiderRoutes.NOTIFICATIONS) })
-        TodayHero(state)
-        Row(horizontalArrangement = Arrangement.spacedBy(MakiSpace.stack)) {
-            MetricTile(Icons.Filled.CheckCircle, state.completed, "completados", MakiColors.Rider, Modifier.weight(1f))
-            MetricTile(Icons.Filled.Inventory2, state.onBoard, "en el tablero", MakiColors.Rider, Modifier.weight(1f))
-        }
-        SectionLabel("Tu turno")
         ShiftCard(
             state,
             onChange = onShiftChange,
             onPlan = { pickTime = true },
             onClearPlan = { onPlanShift(null) },
         )
-        SectionLabel("Tus recojos")
         SiguienteParada(state, busy, onGo = { onNavigate(RiderRoutes.NAVIGATION) })
-        TableroCard(state, onClick = { onNavigate(RiderRoutes.BOARD) })
-        RutaCard(onClick = { onNavigate(RiderRoutes.ROUTE) })
-        EntregaCard(onClick = { onNavigate(RiderRoutes.DELIVERY) })
-        SectionLabel("Tu progreso")
+        Text("Tus recojos", style = MakiType.sectionHeading, color = MakiColors.Text)
+        Column(Modifier.makiCard()) {
+            NavRow(Icons.Filled.Inventory2, "Tablero de solicitudes", state.boardHint.ifBlank { "Mira las solicitudes abiertas cerca de ti" },
+                accent = MakiColors.Rider, framed = false, onClick = { onNavigate(RiderRoutes.BOARD) })
+            HorizontalDivider(color = MakiColors.Border)
+            NavRow(Icons.Filled.Map, "Mi ruta del día", "Orden más rápido por calles y hora de llegada",
+                accent = MakiColors.Rider, framed = false, onClick = { onNavigate(RiderRoutes.ROUTE) })
+            HorizontalDivider(color = MakiColors.Border)
+            NavRow(Icons.Filled.LocalShipping, "Entregar en acopio", "Lleva tus recojos cerrados y cobra al pesaje",
+                accent = MakiColors.Rider, framed = false, onClick = { onNavigate(RiderRoutes.DELIVERY) })
+        }
+        Text("${state.completed} completados · ${state.onBoard} en el tablero", style = MakiType.label, color = MakiColors.Text2)
+        Text("Tu progreso", style = MakiType.sectionHeading, color = MakiColors.Text)
         GananciasWidget(state, onClick = { onNavigate(RiderRoutes.EARNINGS) })
         RankingWidget(state, onClick = { onNavigate(RiderRoutes.RANKING) })
         // Nothing feeds the weather yet; an empty card reads as a broken one.
@@ -212,8 +217,8 @@ private fun Header(state: RiderDashboardUiState, onBell: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(MakiSpace.xs / 4)) {
-            Text((if (state.riderName.isBlank()) "Hola" else "Hola, ${state.riderName}"), color = MakiColors.Text, style = MakiType.sectionHeading)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(MakiSpace.xs / 4)) {
+            Text((if (state.riderName.isBlank()) "Hola" else "Hola, ${state.riderName}"), color = MakiColors.Text, style = MakiType.screenTitle)
             Row(horizontalArrangement = Arrangement.spacedBy(MakiSpace.xs), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.AutoMirrored.Filled.DirectionsBike, null, tint = MakiColors.Rider, modifier = Modifier.size(MakiSpace.md))
                 Text(state.zone, color = MakiColors.Text2, style = MakiType.bodySmall)
@@ -255,21 +260,23 @@ private fun ShiftCard(
 ) {
     val tint = if (state.onShift) MakiColors.Success else MakiColors.Text2
     Column(
-        Modifier.makiCard()
+        Modifier.makiHero(MakiGradient.rider, glow = MakiGradient.glowOf(MakiColors.Rider))
             .fillMaxWidth().padding(start = MakiSpace.lg, top = MakiSpace.sm, end = MakiSpace.sm, bottom = MakiSpace.md),
         verticalArrangement = Arrangement.spacedBy(MakiSpace.sm),
     ) {
+        Text("Ganado hoy", color = MakiColors.OnRiderSoft, style = MakiType.bodySmall)
+        Text(state.earnedToday, color = MakiColors.OnDark, style = MakiType.metricLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(MakiSpace.md), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(MakiSpace.sm).clip(CircleShape).background(tint))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(MakiSpace.xs / 4)) {
                 Text(
                     if (state.onShift) "En turno" else "Fuera de turno",
-                    color = MakiColors.Text, style = MakiType.cardTitle,
+                    color = MakiColors.OnDark, style = MakiType.cardTitle,
                 )
                 Text(
                     if (state.onShift) "Recibes recojos del despacho automático"
                     else "No te asignarán recojos; puedes tomarlos del tablero",
-                    color = MakiColors.Text2, style = MakiType.label,
+                    color = MakiColors.OnRiderSoft, style = MakiType.label,
                 )
             }
             Switch(
@@ -289,16 +296,16 @@ private fun ShiftCard(
         }
         if (state.shiftPlan.isNotBlank()) {
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(MakiRadius.badge)).background(MakiColors.RiderTint)
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(MakiRadius.badge)).background(MakiColors.WhiteTint)
                     .padding(horizontal = MakiSpace.md, vertical = MakiSpace.sm),
                 horizontalArrangement = Arrangement.spacedBy(MakiSpace.sm), verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Filled.Alarm, null, tint = MakiColors.Rider, modifier = Modifier.size(MakiSpace.lg))
+                Icon(Icons.Filled.Alarm, null, tint = MakiColors.OnDark, modifier = Modifier.size(MakiSpace.lg))
                 Text(
-                    state.shiftPlan, color = MakiColors.Rider, style = MakiType.bodySmall, modifier = Modifier.weight(1f),
+                    state.shiftPlan, color = MakiColors.OnDark, style = MakiType.bodySmall, modifier = Modifier.weight(1f),
                 )
                 Text(
-                    "Quitar", color = MakiColors.Text2, style = MakiType.label,
+                    "Quitar", color = MakiColors.OnRiderSoft, style = MakiType.label,
                     modifier = Modifier.clip(RoundedCornerShape(MakiRadius.chip)).clickable(onClickLabel = "Quitar salida programada", role = Role.Button, onClick = onClearPlan)
                         .heightIn(min = MakiSpace.lg * 3).padding(horizontal = MakiSpace.sm, vertical = MakiSpace.xs),
                 )
@@ -318,15 +325,15 @@ private fun ShiftCard(
 private fun ShiftAction(modifier: Modifier, icon: ImageVector, label: String, filled: Boolean, onClick: () -> Unit) {
     Row(
         modifier.clip(RoundedCornerShape(MakiRadius.badge))
-            .background(if (filled) MakiColors.Rider else MakiColors.RiderTint)
+            .background(if (filled) MakiColors.Rider else MakiColors.WhiteTint)
             .clickable(onClickLabel = label, role = Role.Button, onClick = onClick)
             .heightIn(min = MakiSpace.lg * 3).padding(vertical = MakiSpace.md),
         horizontalArrangement = Arrangement.spacedBy(MakiSpace.sm, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, tint = if (filled) MakiColors.OnDark else MakiColors.Rider, modifier = Modifier.size(MakiSpace.lg))
+        Icon(icon, null, tint = MakiColors.OnDark, modifier = Modifier.size(MakiSpace.lg))
         Text(
-            label, color = if (filled) MakiColors.OnDark else MakiColors.Rider,
+            label, color = MakiColors.OnDark,
             style = MakiType.button,
         )
     }

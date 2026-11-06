@@ -60,6 +60,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.maki.data.MakiLocation
+import com.example.maki.ui.components.RumaLogo
 import com.example.maki.ui.components.makiScreen
 import com.example.maki.ui.components.IconBadge
 import com.example.maki.ui.components.MakiInputField
@@ -145,11 +146,7 @@ private fun PageHello() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Box(
-            Modifier.size(MakiSpace.xxl * 4)
-                .makiHero(MakiGradient.genDeep, glow = MakiGradient.glowOf(MakiColors.Gen)),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Filled.Eco, null, tint = MakiColors.OnDark, modifier = Modifier.size(MakiSpace.lg * 4)) }
+        RumaLogo()
         Box(Modifier.height(MakiSpace.xl * 2))
         Text("Hola, soy Ruma", color = MakiColors.Text, style = MakiType.screenTitle)
         Box(Modifier.height(MakiSpace.sm))

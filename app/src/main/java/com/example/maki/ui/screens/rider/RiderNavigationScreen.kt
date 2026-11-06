@@ -3,7 +3,18 @@ package com.example.maki.ui.screens.rider
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.speech.tts.TextToSpeech
+import java.util.Locale
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.LocalView
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -91,6 +102,11 @@ data class RiderNavigationUiState(
     val statusLabel: String = "En camino",
     /** At the door the ETA stops being the headline — the count does. */
     val atDoor: Boolean = false,
+    val roadLoading: Boolean = false,
+    val roadError: String? = null,
+    val maneuver: String? = null,
+    val maneuverMeters: Int? = null,
+    val maneuverKey: String? = null,
 )
 
 /**
@@ -107,11 +123,14 @@ fun RiderNavigationScreen(
     /** Every fresh fix: the VM re-routes and flags "llegando" near the door. */
     onPosition: (RoutePlanner.LatLng) -> Unit = {},
     onRelease: () -> Unit = {},
+    onRetry: () -> Unit = {},
+    /** Optional location source for deterministic device tests; production uses the GPS. */
+    positionSource: (suspend () -> MakiLocation.NavigationFix?)? = null,
 ) {
     if (state == null) {
         // No accepted stop: say so instead of drawing a map to nowhere.
         Column(
-            Modifier.fillMaxSize().makiScreen().statusBarsPadding(),
+            Modifier.fillMaxSize().makiScreen(MakiColors.Rider).statusBarsPadding(),
         ) {
             Box(Modifier.padding(MakiSpace.gutter)) { BackButton(onBack) }
             MakiEmpty(
@@ -126,30 +145,72 @@ fun RiderNavigationScreen(
     val destination = state.lat?.let { lat -> state.lng?.let { lng -> GeoPoint(lat, lng) } }
     val ctx = LocalContext.current
     var askRelease by remember { mutableStateOf(false) }
+    var follow by remember { mutableStateOf(true) }
+    var recenter by remember { mutableStateOf(0) }
+    var voice by remember { mutableStateOf(false) }
+    var voiceReady by remember { mutableStateOf(false) }
+    var spoken by remember { mutableStateOf<String?>(null) }
+    var tts by remember { mutableStateOf<TextToSpeech?>(null) }
+    var voiceError by remember { mutableStateOf<String?>(null) }
+    DisposableEffect(ctx) {
+        val engine = TextToSpeech(ctx) { status -> voiceReady = status == TextToSpeech.SUCCESS }
+        tts = engine
+        onDispose { engine.stop(); engine.shutdown() }
+    }
+    var here by remember { mutableStateOf<RoutePlanner.LatLng?>(null) }
+    var locationMessage by remember { mutableStateOf<String?>("Buscando tu ubicación…") }
+    val owner = LocalLifecycleOwner.current
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val previous = view.keepScreenOn
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = previous }
+    }
+    LaunchedEffect(voice, voiceReady, state.maneuverKey, state.maneuverMeters, locationMessage) {
+        if (!voice || locationMessage != null) { tts?.stop(); return@LaunchedEffect }
+        val meters = state.maneuverMeters ?: return@LaunchedEffect
+        if (voiceReady && meters <= 150 && state.maneuverKey != spoken && state.maneuver != null) {
+            val language = tts?.setLanguage(Locale.forLanguageTag("es-PE"))
+            if (language != null && language >= TextToSpeech.LANG_AVAILABLE) {
+                tts?.speak("En $meters metros, ${state.maneuver}", TextToSpeech.QUEUE_FLUSH, null, state.maneuverKey)
+                spoken = state.maneuverKey
+                voiceError = null
+            } else { voice = false; voiceError = "Instala una voz en español en los ajustes de texto a voz." }
+        }
+    }
 
     // The rider's own position, refreshed while this screen is open — the map is
     // useless without "you are here", and the distance banner is a guess without it.
-    var here by remember { mutableStateOf(MakiLocation.lastKnown(ctx, maxAgeMs = FIX_MAX_AGE_MS)) }
     val report by rememberUpdatedState(onPosition)
-    LaunchedEffect(Unit) {
-        while (true) {
-            MakiLocation.current(ctx, maxAgeMs = FIX_MAX_AGE_MS)?.let {
-                here = it
-                report(it)
+    LaunchedEffect(owner) {
+        owner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            try {
+                while (true) {
+                    val fix = if (positionSource != null) positionSource() else MakiLocation.navigationFix(ctx)
+                    locationMessage = when {
+                        positionSource == null && !MakiLocation.hasPermission(ctx) -> "Permite la ubicación precisa en los ajustes de Ruma."
+                        fix == null -> "Esperando señal GPS. Comprueba que la ubicación esté activada."
+                        fix.accuracyMeters > 60 -> "La ubicación es imprecisa. Busca un lugar con mejor señal."
+                        else -> null
+                    }
+                    here = fix?.takeIf { it.accuracyMeters <= 60 }?.point
+                    here?.let { report(it) }
+                    delay(HERE_REFRESH_MS)
+                }
+            } finally {
+                here = null
+                locationMessage = "Esperando una ubicación reciente…"
+                tts?.stop()
             }
-            delay(HERE_REFRESH_MS)
         }
     }
     val herePoint = here?.let { GeoPoint(it.lat, it.lng) }
 
-    // Road distance/time when the router answered; straight line as the fallback.
-    val straightKm = if (here != null && state.lat != null && state.lng != null) {
-        RoutePlanner.distanceKm(here!!, RoutePlanner.LatLng(state.lat, state.lng))
-    } else null
-    val km = state.roadKm ?: straightKm
-    val distanceLabel = km?.let { RoutePlanner.distanceLabel(it) } ?: state.distance
-    val minutes = state.roadMinutes ?: straightKm?.let { RoutePlanner.etaMinutes(it) }
-    val etaLabel = minutes?.let { "~$it min" } ?: state.eta
+    // Only display road estimates from a real routing response.
+    val km = state.roadKm
+    val distanceLabel = km?.let { RoutePlanner.distanceLabel(it) } ?: "—"
+    val minutes = state.roadMinutes.takeIf { locationMessage == null }
+    val etaLabel = minutes?.let { "~$it min" } ?: "—"
     // The headline a rider can act on: the hour they knock, not a countdown.
     val arrivalLabel = when {
         state.atDoor -> "Ya estás en el punto"
@@ -157,7 +218,9 @@ fun RiderNavigationScreen(
         else -> state.statusLabel
     }
 
-    Column(Modifier.fillMaxSize().makiScreen()) {
+    BoxWithConstraints(Modifier.fillMaxSize().makiScreen(MakiColors.Rider)) {
+    val sheetMax = maxHeight * 0.50f
+    Column(Modifier.fillMaxSize()) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (destination != null) {
                 OsmMap(
@@ -166,10 +229,12 @@ fun RiderNavigationScreen(
                     zoom = 17.0,
                     markers = listOfNotNull(
                         OsmMarker(destination, state.stopName, MakiColors.Gen.toArgb()),
-                        herePoint?.let { OsmMarker(it, "Tú", MakiColors.Rider.toArgb()) },
+                        herePoint?.let { OsmMarker(it, "Tú", current = true) },
                     ),
-                    route = state.path.map { GeoPoint(it.lat, it.lng) }
-                        .ifEmpty { listOfNotNull(herePoint, destination).takeIf { it.size == 2 }.orEmpty() },
+                    route = state.path.map { GeoPoint(it.lat, it.lng) },
+                    followFirst = follow,
+                    recenter = recenter,
+                    onMapGesture = { follow = false },
                 )
             }
             // Back + distance / how to find the door, over the top of the map.
@@ -188,13 +253,20 @@ fun RiderNavigationScreen(
                     )
                     Column(Modifier.weight(1f)) {
                         Text(
-                            arrivalLabel,
+                            when {
+                                destination == null -> "Destino sin ubicación"
+                                locationMessage != null -> "Esperando ubicación GPS"
+                                state.roadLoading && state.path.isEmpty() -> "Calculando ruta por calles"
+                                state.roadError != null -> "Ruta sin actualizar"
+                                state.path.isEmpty() -> "Esperando ruta"
+                                else -> state.maneuver ?: arrivalLabel
+                            },
                             color = MakiColors.OnDark, style = MakiType.sectionHeading,
                         )
                         Text(
                             listOf(
-                                if (state.roadKm != null) "$distanceLabel por calles" else distanceLabel,
-                                etaLabel,
+                                state.maneuverMeters?.takeIf { locationMessage == null }?.let { "En $it m" }.orEmpty(),
+                                if (state.roadKm != null) "$distanceLabel · $etaLabel estimados" else "Activa ubicación precisa y conexión",
                             ).filter { it.isNotBlank() && it != "—" }.joinToString(" · "),
                             color = MakiColors.OnRiderSoft, style = MakiType.label,
                         )
@@ -209,11 +281,17 @@ fun RiderNavigationScreen(
                 StatusPill(state.statusLabel, MakiColors.Rider)
                 if (state.position.isNotBlank()) StatusPill(state.position, MakiColors.Text2)
             }
+            TextButton(onClick = { follow = true; recenter++ }, enabled = herePoint != null,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = MakiSpace.xxl).makiCard()) {
+                Icon(Icons.Filled.MyLocation, null, tint = MakiColors.Rider)
+                Text("Centrar", style = MakiType.button, color = MakiColors.Rider)
+            }
         }
 
         // Destination sheet with the actions.
         Column(
             Modifier.fillMaxWidth().makiCard(MakiRadius.hero)
+                .heightIn(max = sheetMax).verticalScroll(rememberScrollState())
                 .navigationBarsPadding().padding(horizontal = MakiSpace.gutter, vertical = MakiSpace.lg),
             verticalArrangement = Arrangement.spacedBy(MakiSpace.md),
         ) {
@@ -249,8 +327,8 @@ fun RiderNavigationScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(MakiSpace.sm)) {
                 if (state.lat != null && state.lng != null) {
                     SecondaryButton(
-                        "Guía por voz", Modifier.weight(1f), icon = Icons.Filled.Directions, color = MakiColors.Rider,
-                        onClick = { openTurnByTurn(ctx, state.lat, state.lng, state.stopName) },
+                        if (voice) "Silenciar guía" else "Activar voz", Modifier.weight(1f), icon = Icons.Filled.Directions, color = MakiColors.Rider,
+                        onClick = { voice = !voice; if (voice) spoken = null },
                     )
                 }
                 state.phone?.let { phone ->
@@ -258,6 +336,17 @@ fun RiderNavigationScreen(
                         "Llamar", Modifier.weight(1f), icon = Icons.Filled.Phone, color = MakiColors.Rider,
                         onClick = { runCatching { ctx.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))) } },
                     )
+                }
+            }
+            if (state.roadError != null) {
+                Text(state.roadError, style = MakiType.caption, color = MakiColors.Text2)
+                TextButton(onClick = onRetry, enabled = !state.roadLoading) { Text("Reintentar ruta", style = MakiType.button) }
+            }
+            locationMessage?.let { Text(it, style = MakiType.caption, color = MakiColors.Text2) }
+            voiceError?.let { Text(it, style = MakiType.caption, color = MakiColors.Error) }
+            if (state.lat != null && state.lng != null) {
+                TextButton(onClick = { openTurnByTurn(ctx, state.lat, state.lng, state.stopName) }) {
+                    Text("Abrir en otra app", style = MakiType.caption, color = MakiColors.Text2)
                 }
             }
             PrimaryButton("He llegado al punto", Modifier.fillMaxWidth(), color = MakiColors.Rider, enabled = !busy, onClick = onArrived)
@@ -270,6 +359,7 @@ fun RiderNavigationScreen(
                     .heightIn(min = MakiSpace.lg * 3).padding(MakiSpace.sm),
             )
         }
+    }
     }
 
     if (askRelease) {
@@ -309,8 +399,6 @@ private fun openTurnByTurn(context: Context, lat: Double, lng: Double, label: St
 
 /** How often the navigation screen re-reads where the rider is. */
 private const val HERE_REFRESH_MS = 5_000L
-/** A cached fix older than this is not "here" for someone riding a moto. */
-private const val FIX_MAX_AGE_MS = 20_000L
 
 /** Small state pill over the map: status first, then where this stop sits in the day. */
 @Composable

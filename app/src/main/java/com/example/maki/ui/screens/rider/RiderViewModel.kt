@@ -32,6 +32,10 @@ import com.example.maki.data.RiderShiftWorker
 import com.example.maki.data.RoutePlanner
 import com.example.maki.data.RouteDto
 import com.example.maki.data.StreetRouter
+import com.example.maki.data.NavigationRoutePolicy
+import com.example.maki.data.RouteProgress
+import android.os.SystemClock
+import kotlinx.coroutines.Job
 import com.example.maki.data.UserAchievementDto
 import com.example.maki.ui.screens.generator.MakiTime
 import com.example.maki.ui.screens.generator.groupInt
@@ -114,8 +118,15 @@ class RiderViewModel : ViewModel() {
 
     /** Street path for the leg being navigated, and where/for which stop it was asked. */
     private var navRoad by mutableStateOf<StreetRouter.Route?>(null)
-    private var navFrom: RoutePlanner.LatLng? = null
     private var navPickupId: String? = null
+    private val navPolicy = NavigationRoutePolicy()
+    private var navJob: Job? = null
+    private var navKey: String? = null
+    private var navHere by mutableStateOf<RoutePlanner.LatLng?>(null)
+    private var navLoading by mutableStateOf(false)
+    private var navError by mutableStateOf<String?>(null)
+    private var offRouteFixes = 0
+    private var routeGeneration = 0L
 
     /** Last known rider position (heartbeat / navigation); every order starts here. */
     private var origin: RoutePlanner.LatLng? = null
@@ -151,9 +162,22 @@ class RiderViewModel : ViewModel() {
         get() {
             val p = activePickup?.takeIf { it.rider_id != null } ?: return null
             val index = assigned.indexOfFirst { it.id == p.id }
+            val road = navRoad.takeIf { navPickupId == p.id }
+            val progress = navHere?.let { here -> road?.let { RouteProgress.locate(here, it.path) } }
+            val onPath = progress != null && progress.offRouteKm <= 0.06
+            val travelled = if (onPath && progress!!.totalKm > 0) progress.travelledKm / progress.totalKm * (road?.distanceKm ?: 0.0) else 0.0
+            val next = road?.steps?.firstOrNull { it.atKm >= travelled - 0.01 && it.atKm > 0 } ?: road?.steps?.lastOrNull()
             return p.toNavigationUi(
-                road = navRoad.takeIf { navPickupId == p.id },
+                road = road,
                 position = if (index >= 0 && assigned.size > 1) "Parada ${index + 1} de ${assigned.size}" else "",
+            ).copy(
+                roadLoading = navLoading,
+                roadError = navError,
+                maneuver = next?.takeIf { onPath && navError == null }?.instruction,
+                maneuverMeters = next?.takeIf { onPath && navError == null }?.let { maxOf(0, ((it.atKm - travelled) * 1000).toInt()) },
+                maneuverKey = next?.let { "${p.id}:${it.point}:${it.instruction}" },
+                roadKm = road?.distanceKm?.let { maxOf(0.0, it - travelled) },
+                roadMinutes = road?.let { maxOf(1, kotlin.math.ceil(it.minutes * (1 - travelled / it.distanceKm.coerceAtLeast(0.001))).toInt()) },
             )
         }
 
@@ -340,31 +364,42 @@ class RiderViewModel : ViewModel() {
      * its streets drawn. Best-effort: on failure the local order stays.
      */
     private suspend fun streetTrip() {
+        val generation = ++routeGeneration
         val planned = plannedRoute?.takeIf { it.route_stops.isNotEmpty() }
         if (planned != null) {
             val pts = listOfNotNull(origin) + route?.markers.orEmpty().map { RoutePlanner.LatLng(it.lat, it.lng) }
             val street = StreetRouter.route(pts, vehicle) ?: return
+            if (generation != routeGeneration) return
             route = buildRoute(planned, assigned, origin, street)
             return
         }
         val head = assigned.firstOrNull { it.status in IN_FLIGHT }
         val rest = assigned.filter { it !== head }
         val located = rest.filter { it.latLng() != null }
-        if (located.isEmpty()) return
-        val from = head?.latLng()?.toLL() ?: origin ?: located.first().latLng()!!.toLL()
+        if (located.isEmpty()) {
+            val points = listOfNotNull(origin, head?.latLng()?.toLL())
+            val street = StreetRouter.route(points, vehicle) ?: return
+            if (generation == routeGeneration) route = buildRoute(null, assigned, origin, street)
+            return
+        }
+        val from = head?.latLng()?.toLL() ?: origin ?: return
         val stops = assigned.mapNotNull { it.id }
         val trip = StreetRouter.trip(from, located.map { it.latLng()!!.toLL() }, vehicle) ?: return
-        if (trip.visitOrder.size != located.size) return
+        if (trip.visitOrder.sorted() != located.indices.toList()) return
         // Stops appeared or left while the router thought: its order and its drawn path
         // describe a route that no longer exists. Drop it — the next fix re-asks.
-        if (assigned.mapNotNull { it.id } != stops) return
+        if (generation != routeGeneration || assigned.mapNotNull { it.id } != stops || assigned.firstOrNull { it.status in IN_FLIGHT }?.id != head?.id) return
         // The router can answer after the list moved on (a poll landed, a stop turned
         // en_route). Apply only the order it computed to the rows we hold now; pasting
         // back the copies we captured would undo those fresher statuses.
         // ponytail: indexOf over a rider's handful of stops; a map if routes get long.
         val order = (listOfNotNull(head) + trip.visitOrder.map { located[it] }).mapNotNull { it.id }
+        val ordered = assigned.sortedBy { p -> order.indexOf(p.id).takeIf { it >= 0 } ?: Int.MAX_VALUE }
+        // Trip starts at the pinned stop; fetch the complete geometry from the rider.
+        val street = if (head != null) StreetRouter.route(listOfNotNull(origin) + ordered.mapNotNull { it.latLng()?.toLL() }, vehicle) else trip
+        if (generation != routeGeneration || assigned.mapNotNull { it.id } != stops) return
         assigned = assigned.sortedBy { p -> order.indexOf(p.id).takeIf { it >= 0 } ?: Int.MAX_VALUE }
-        route = buildRoute(null, assigned, origin, trip)
+        route = buildRoute(null, assigned, origin, street)
     }
 
     fun loadHistory(force: Boolean = false) = load(KEY_HISTORY) {
@@ -433,8 +468,21 @@ class RiderViewModel : ViewModel() {
     /** The rider tapped "Navegar" on a specific stop of the route. */
     fun selectStop(pickupId: String?) {
         selectedId = pickupId
-        navRoad = null
+        resetNavigation()
     }
+
+    private fun resetNavigation() {
+        navJob?.cancel()
+        navPolicy.reset()
+        navRoad = null
+        navPickupId = null
+        navKey = null
+        navLoading = false
+        navError = null
+        offRouteFixes = 0
+    }
+
+    fun retryNavigation() { navHere?.let { onNavPosition(it, force = true) } }
 
     /** Leaving for the stop: the family's map switches to "va en camino". */
     fun startNavigation() {
@@ -452,17 +500,25 @@ class RiderViewModel : ViewModel() {
      * door (the family gets told) and re-asks the street path once the rider has
      * moved far enough for the old one to be wrong.
      */
-    fun onNavPosition(here: RoutePlanner.LatLng) {
+    fun onNavPosition(here: RoutePlanner.LatLng, force: Boolean = false) {
         origin = here
+        navHere = here
         val p = activePickup?.takeIf { it.rider_id != null } ?: return
         val dest = p.latLng()?.toLL() ?: return
         if (p.status == "en_route" && RoutePlanner.distanceKm(here, dest) <= ARRIVING_KM) advance(p, "arriving")
-        val last = navFrom
-        if (navPickupId == p.id && last != null && RoutePlanner.distanceKm(last, here) < REROUTE_KM) return
-        navFrom = here
+        val key = "${p.id}:${dest.lat}:${dest.lng}:$vehicle"
+        if (navKey != key) { resetNavigation(); navKey = key }
         navPickupId = p.id
-        viewModelScope.launch {
-            StreetRouter.route(listOf(here, dest), vehicle)?.let { if (navPickupId == p.id) navRoad = it }
+        val away = navRoad?.let { RouteProgress.locate(here, it.path)?.offRouteKm ?: 0.0 } ?: 0.0
+        offRouteFixes = if (away > 0.06) offRouteFixes + 1 else 0
+        val ticket = navPolicy.begin(key, SystemClock.elapsedRealtime(), offRouteFixes >= 2, force) ?: return
+        navLoading = true
+        navJob = viewModelScope.launch {
+            val result = StreetRouter.route(listOf(here, dest), vehicle)
+            if (!navPolicy.complete(ticket, here, SystemClock.elapsedRealtime(), result != null)) return@launch
+            navLoading = false
+            navError = if (result == null) "No se pudo actualizar la ruta. Reintentaremos automáticamente." else null
+            if (result != null) navRoad = result
         }
     }
 
@@ -685,8 +741,6 @@ class RiderViewModel : ViewModel() {
 private val IN_FLIGHT = setOf("en_route", "arriving", "collecting")
 /** 150 m: close enough that "está llegando" is true on SJL's short blocks. */
 private const val ARRIVING_KM = 0.15
-/** 40 m: less than that and the old street path still starts at the rider. */
-private const val REROUTE_KM = 0.04
 /** Parking, knocking, counting: minutes per stop on top of the ride. */
 private const val SERVICE_MIN_PER_STOP = 4
 
@@ -923,7 +977,7 @@ private fun PickupDto.toNavigationUi(road: StreetRouter.Route?, position: String
         "collecting" -> "Contando en la puerta"
         else -> "En camino"
     },
-    atDoor = status == "arriving" || status == "collecting",
+    atDoor = status == "collecting",
     materials = pickup_items.mapNotNull { item ->
         val qty = item.confirmed_quantity ?: item.reported_quantity
         item.materials?.code?.let { "$qty ${shortMaterial(it)}" }
@@ -988,8 +1042,8 @@ private fun buildRoute(
         optimizedNote = when {
             planned != null -> "Ruta planificada · ${planned.total_stops} paradas"
             stops.isEmpty() -> "Aún no tienes paradas asignadas"
-            street != null && stops.size >= 2 -> "Ruta más rápida por calles · ${stops.size} paradas"
-            stops.size >= 2 -> "Ruta ordenada · ${stops.size} paradas en orden más corto"
+            street != null && stops.size >= 2 -> "Ruta por calles · ${stops.size} paradas"
+            stops.size >= 2 -> "Orden aproximado · ${stops.size} paradas"
             else -> "1 parada asignada"
         },
         stops = stops,

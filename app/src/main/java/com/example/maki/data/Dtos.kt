@@ -593,7 +593,13 @@ data class OsrmGeometryDto(val coordinates: List<List<Double>> = emptyList())
 
 /** One hop between two consecutive waypoints — what each stop's own ETA comes from. */
 @Serializable
-data class OsrmHopDto(val distance: Double = 0.0, val duration: Double = 0.0)
+data class OsrmHopDto(val distance: Double = 0.0, val duration: Double = 0.0, val steps: List<OsrmStepDto> = emptyList())
+
+@Serializable
+data class OsrmManeuverDto(val type: String = "", val modifier: String = "", val exit: Int? = null, val location: List<Double> = emptyList())
+
+@Serializable
+data class OsrmStepDto(val distance: Double = 0.0, val duration: Double = 0.0, val name: String = "", val maneuver: OsrmManeuverDto = OsrmManeuverDto())
 
 @Serializable
 data class OsrmLegDto(

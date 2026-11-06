@@ -95,7 +95,7 @@ fun RiderBoardScreen(
 ) {
     val s = state ?: SampleBoard.takeIf { androidx.compose.ui.platform.LocalInspectionMode.current }
 
-    Column(Modifier.fillMaxSize().makiScreen().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().makiScreen(MakiColors.Rider).statusBarsPadding()) {
         DetailHeader(title = "Tablero de solicitudes", onBack = onBack)
 
         LazyColumn(

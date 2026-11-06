@@ -48,7 +48,7 @@ fun RiderCompletedScreen(
     onFinish: () -> Unit = {},
 ) {
     Column(
-        Modifier.fillMaxSize().makiScreen().statusBarsPadding().navigationBarsPadding()
+        Modifier.fillMaxSize().makiScreen(MakiColors.Rider).statusBarsPadding().navigationBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = MakiSpace.gutter, vertical = MakiSpace.xl),
         horizontalAlignment = Alignment.CenterHorizontally,
