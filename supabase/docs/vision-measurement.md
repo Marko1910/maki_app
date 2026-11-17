@@ -36,7 +36,7 @@ una futura evaluación independiente, pero no la reemplaza.
    estaba firmada. Un campo `provider` enviado por el cliente no sería confiable.
 4. Una sesión puede combinar varias fotografías y varios proveedores. El conteo
    final no puede atribuirse arbitrariamente al último o al primer modelo.
-5. Los datos históricos incluyen pruebas. Las cuentas `@maki.test` deben quedar
+5. Los datos históricos incluyen pruebas. Las cuentas `@ruma.test` deben quedar
    separadas de las demás; ese dominio es una señal de prueba, no una garantía
    de que todos los demás registros sean de uso real.
 

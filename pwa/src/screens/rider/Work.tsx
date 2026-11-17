@@ -1,10 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useRoadNavigation } from "../../lib/useRoadNavigation";
+import { PushCard } from "../../components/Push";
 import { streetRoute } from "../../lib/navigation";
-import { Empty, Failure, Icon, Loading, NavRow, RumaMap, Stepper, TopBar, useToast, type MapPin } from "../../components/ui";
-import { acceptPickup, completePickup, confirmQuantities, humanize, loadAvailablePickups, loadMyAssignedPickups, loadMyName, loadMyRiderProfile, loadNotifications, loadRiderEarnings, myId, releasePickup, setPickupStatus, setRiderAvailability, setRiderShiftStart, type Row } from "../../lib/api";
-import { ago, clock, distanceKm, here, itemsLine, meters, pickupLatLng, sameDay, soles, streetTrip, useAsync, useInterval, useWakeLock, VEHICLE, type LatLng, type RoadRoute } from "../../lib/util";
+import { Empty, Failure, Icon, NavRow, RumaMap, Skeleton, Stepper, TopBar, useToast, type MapPin } from "../../components/ui";
+import { tick } from "../../lib/flow";
+import { acceptPickup, completePickup, confirmQuantities, humanize, loadAvailablePickups, loadMyAssignedPickups, loadMyName, loadMyRiderProfile, loadNotifications, loadRiderEarnings, loadRiderPosition, myId, releasePickup, setPickupStatus, setRiderAvailability, setRiderShiftStart, type Row } from "../../lib/api";
+import { ago, clock, distanceKm, here, itemsLine, meters, pickupLatLng, sameDay, soles, stopAddress, streetTrip, useAsync, useInterval, useWakeLock, VEHICLE, windowText, type LatLng, type RoadRoute } from "../../lib/util";
 
 /* ---------- Rider state shared by the whole graph ---------- */
 
@@ -40,16 +42,30 @@ export function RiderProvider({ children }: { children: ReactNode }) {
     };
   });
   const [selectedId, select] = useState<string | null>(null);
-  const [origin, setOrigin] = useState<LatLng | null>(null);
+  const [fresh, setFresh] = useState<LatLng | null>(null);
+  const [rough, setRough] = useState<LatLng | null>(null);
   const [shift, setShift] = useState<boolean | null>(null);
   const [completed, setCompleted] = useState<Row | null>(null);
   const known = useRef<Set<string> | null>(null);
   const d = load.data;
   const onShift = shift ?? d?.profile?.is_available ?? false;
 
-  useEffect(() => { void here().then((p) => { if (p) setOrigin(p); }); }, []);
+  // Every order starts at the best position there is: a fresh fix, else any older or
+  // rougher one, else the last heartbeat in rider_profiles. Indoors at night the
+  // precise fix never came and the route was ordered from nowhere.
+  const locate = useCallback(async () => {
+    const p = await here();
+    if (p) { setFresh(p); return; }
+    const old = await here(Infinity, false);
+    if (old) { setRough(old); return; }
+    const id = myId();
+    const hb = id ? await loadRiderPosition(id).catch(() => null) : null;
+    if (hb?.current_latitude != null && hb?.current_longitude != null) setRough({ lat: hb.current_latitude, lng: hb.current_longitude });
+  }, []);
+  const origin = fresh ?? rough;
+  useEffect(() => { void locate(); }, [locate]);
   const refresh = useCallback(async () => { await load.reload(true); }, [load]);
-  useInterval(() => { void refresh(); void here().then((p) => { if (p) setOrigin(p); }); }, REFRESH_MS);
+  useInterval(() => { void refresh(); if (!fresh) void locate(); else void here().then((p) => { if (p) setFresh(p); }); }, REFRESH_MS);
 
   // A stop the dispatcher just handed over is news worth telling.
   useEffect(() => {
@@ -91,7 +107,7 @@ export function RiderProvider({ children }: { children: ReactNode }) {
 }
 
 const familyOf = (p: Row) => p.generator?.display_name ?? "Vecino";
-const addressOf = (p: Row) => p.address?.address_line ?? "Sin dirección";
+const addressOf = stopAddress;
 const distanceTo = (from: LatLng | null, p: Row) => { const to = pickupLatLng(p); return from && to ? distanceKm(from, to) : null; };
 
 /* ---------- Dashboard ---------- */
@@ -103,7 +119,7 @@ export function Dashboard() {
   const [time, setTime] = useState("15:00");
   const [plan, setPlan] = useState(readPlan());
   const ios = /iP(hone|ad|od)/.test(navigator.userAgent);
-  if (r.loading) return <main className="screen with-nav"><Loading /></main>;
+  if (r.loading) return <main className="screen with-nav"><Skeleton label="Cargando tu inicio…" blocks={[64, 160, 108, 136, 52]} /></main>;
   if (r.error) return <main className="screen with-nav"><Failure text={r.error} retry={() => void r.refresh()} /></main>;
   const next = r.assigned[0] ?? null;
   const open = next ? null : r.available[0] ?? null;
@@ -132,6 +148,7 @@ export function Dashboard() {
         <div className="min0"><h1 className="t-title">{firstName ? `Hola, ${firstName}` : "Hola"}</h1><p className="muted t-small">{[VEHICLE[r.profile?.vehicle_type] ?? r.profile?.vehicle_type, r.onShift ? "En turno" : "Fuera de turno"].filter(Boolean).join(" · ")}</p></div>
         <button className="icon-btn" aria-label={r.unread ? "Ver notificaciones sin leer" : "Ver notificaciones"} onClick={() => nav("/r/notificaciones")}><Icon name="bell" />{r.unread && <i className="dot" />}</button>
       </header>
+      <PushCard quiet />
       <section className="hero">
         <div className="between"><p className="t-over">Tu turno</p>
           <button className="toggle" role="switch" aria-checked={r.onShift} aria-label={r.onShift ? "En turno, tocar para salir de turno" : "Fuera de turno, tocar para entrar en turno"} onClick={() => void r.setOnShift(!r.onShift)}><i /></button></div>
@@ -151,14 +168,14 @@ export function Dashboard() {
         <p className="t-over">{next ? "Siguiente parada" : "Disponible ahora"}</p>
         <h2 className="t-card">{familyOf(stop)}</h2>
         <p className="muted">{addressOf(stop)}</p>
-        <p className="t-small">{[km != null ? meters(km) : null, stop.window_label].filter(Boolean).join(" · ")}</p>
+        <p className="t-small">{[km != null ? meters(km) : null, windowText(stop)].filter(Boolean).join(" · ")}</p>
         <button className="btn btn-primary" onClick={() => void go()}>{next ? "Ir a la parada" : "Tomar este recojo"} <Icon name="arrow" /></button>
       </section> : <section className="glass pad stack"><h2 className="t-row">Sin recojos pendientes</h2><p className="muted">Te avisaremos cuando haya solicitudes</p></section>}
       <h2 className="t-card">Tus recojos</h2>
       <div className="glass list">
         <NavRow icon="board" title="Tablero de solicitudes" sub="Mira las solicitudes abiertas cerca de ti" onClick={() => nav("/r/tablero")} />
         <NavRow icon="route" title="Mi ruta del día" sub="Orden más rápido por calles y hora de llegada" onClick={() => nav("/r/ruta")} />
-        <NavRow icon="box" title="Entregar en acopio" sub="Lleva tus recojos cerrados y cobra al pesaje" onClick={() => nav("/r/entrega")} />
+        <NavRow icon="box" title="Entregar en acopio" sub="S/ 0,35 por kg pesado + S/ 6 por ruta de 12 recojos" onClick={() => nav("/r/entrega")} />
       </div>
       <h2 className="t-card">Tu progreso</h2>
       <div className="glass list">
@@ -184,14 +201,14 @@ export function Board() {
   const claim = async (id: string) => {
     setBusy(id);
     try {
-      if (await acceptPickup(id)) { toast("¡Recojo tomado! Ya está en tu ruta."); r.select(id); await r.refresh(); nav("/r/navegar"); }
+      if (await acceptPickup(id)) { tick(); toast("¡Recojo tomado! Ya está en tu ruta."); r.select(id); await r.refresh(); nav("/r/navegar"); }
       else { toast("Otro Eco-Rider tomó este recojo."); await r.refresh(); }
     } catch (e) { toast(humanize(e)); } finally { setBusy(null); }
   };
   return (
     <main className="screen with-nav">
       <TopBar title="Tablero de solicitudes" back={false} />
-      {r.loading ? <Loading text="Buscando solicitudes abiertas…" /> : r.error ? <Failure text={r.error} retry={() => void r.refresh()} /> : !rows.length ? <Empty title="El tablero está vacío" text="Cuando alguien pida un recojo en tu zona aparecerá aquí y podrás tomarlo." icon="board" /> : <>
+      {r.loading ? <Skeleton label="Buscando solicitudes abiertas…" blocks={[200, 96, 96, 96]} /> : r.error ? <Failure text={r.error} retry={() => void r.refresh()} /> : !rows.length ? <Empty title="El tablero está vacío" text="Cuando alguien pida un recojo en tu zona aparecerá aquí y podrás tomarlo." icon="board" /> : <>
         {pins.length > 0 && <RumaMap pins={pins} />}
         <p className="t-over">Solicitudes abiertas</p>
         {rows.map((p, i) => {
@@ -199,7 +216,7 @@ export function Board() {
           return <section className="glass pad stack" key={p.id}>
             <div className="between"><h2 className="t-card">{familyOf(p)}</h2>{km != null && <span className="chip">{meters(km)}</span>}</div>
             <p className="muted">{addressOf(p)}</p>
-            <div className="between muted t-small"><span>{p.window_label}</span><span>{ago(p.created_at)}</span></div>
+            <div className="between muted t-small"><span>{windowText(p)}</span><span>{ago(p.created_at)}</span></div>
             {itemsLine(p) && <p className="t-small">{itemsLine(p)}</p>}
             <button className={`btn ${i === 0 ? "btn-primary" : "btn-secondary"}`} disabled={busy === p.id} onClick={() => void claim(p.id)}>{busy === p.id ? "Tomando…" : "Tomar este recojo"}</button>
           </section>;
@@ -227,7 +244,9 @@ export function RouteScreen() {
     if (!r.origin || !points.length) { setPlan(null); return; }
     const origin = r.origin;
     const build = async () => {
-      const head = points.find((x) => ["en_route", "arriving", "collecting"].includes(x.p.status));
+      // Only the stop whose door the rider is at stays first. Any in-flight one used to:
+      // stops left "en_route" by old tests started a Cartavio rider's trip in Trujillo.
+      const head = points.find((x) => ["arriving", "collecting"].includes(x.p.status) && distanceKm(origin, x.l) <= 1);
       const rest = points.filter((x) => x !== head);
       const trip = rest.length ? await streetTrip(head?.l ?? origin, rest.map((x) => x.l), r.profile?.vehicle_type, controller.signal) : null;
       if (controller.signal.aborted) return;
@@ -250,18 +269,18 @@ export function RouteScreen() {
   return (
     <main className="screen with-nav">
       <TopBar title="Ruta del Día" back={false} />
-      {r.loading ? <Loading text="Cargando tu ruta…" /> : r.error ? <Failure text={r.error} retry={() => void r.refresh()} /> : !stops.length ? <Empty title="Sin paradas por ahora" text="Toma un recojo desde el tablero y aparecerá aquí, en orden de ruta." icon="route" /> : <>
+      {r.loading ? <Skeleton label="Cargando tu ruta…" blocks={[200, 88, 88, 88]} /> : r.error ? <Failure text={r.error} retry={() => void r.refresh()} /> : !stops.length ? <Empty title="Sin paradas por ahora" text="Toma un recojo desde el tablero y aparecerá aquí, en orden de ruta." icon="route" /> : <>
         {pins.length > 0 && <RumaMap pins={pins} path={road?.path} />}
         <section className="hero">
           <p className="t-over">{road ? "Ruta por calles · orden sugerido" : "Tu ruta"} · {stops.length} parada{stops.length > 1 ? "s" : ""}</p>
           {finish && <p className="t-title">Terminas ~{clock(finish)}</p>}
           <div className="grid2 hero-rule">
             <div><p className="soft t-small">Distancia</p><p className="t-card">{road ? `${road.km.toFixed(1)} km` : "—"}</p></div>
-            <div><p className="soft t-small">Ganancia estimada</p><p className="t-card">{soles(earn)}</p></div>
+            <div><p className="soft t-small">Ganancia estimada · se paga al pesar</p><p className="t-card">≈ {soles(earn)}</p></div>
           </div>
         </section>
         {routeError && <Failure text="No se pudo calcular el recorrido por calles." retry={() => setRetry((n) => n + 1)} />}
-        {!r.origin && <p className="muted">Necesitamos tu ubicación para calcular el recorrido.</p>}
+        {!r.origin && stops.length > 1 && <p className="muted" role="status">Sin tu ubicación: orden aproximado.</p>}
         {points.length < stops.length && <p className="muted">Hay paradas sin ubicación. Permanecen en la lista, pero no se incluyen en el trazado.</p>}
         <p className="t-over">Paradas de tu ruta</p>
         <div className="glass list">{ordered.map((p, i) => <div key={p.id}>
@@ -311,7 +330,7 @@ export function Navigation() {
     if (p.status === "en_route" && km != null && km <= ARRIVING_KM && !flagged.current.has(`near:${p.id}`)) {
       flagged.current.add(`near:${p.id}`);
       const flag = `near:${p.id}`;
-      setPickupStatus(p.id, "arriving").then(() => r.refresh()).catch(() => flagged.current.delete(flag));
+      setPickupStatus(p.id, "arriving").then(() => { tick(); return r.refresh(); }).catch(() => flagged.current.delete(flag));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pos?.lat, pos?.lng, dest?.lat, dest?.lng, p?.status]);
@@ -354,7 +373,7 @@ export function Navigation() {
     catch (e) { toast(humanize(e)); setBusy(false); }
   };
 
-  if (r.loading) return <main className="screen"><Loading /></main>;
+  if (r.loading) return <main className="screen"><Skeleton label="Cargando tu navegación…" blocks={[320, 96, 56]} /></main>;
   if (!p) return <main className="screen"><TopBar title="Navegación" /><Empty title="No hay un recojo en curso" text="Toma una solicitud del tablero para empezar a navegar." icon="route" /></main>;
   const index = r.assigned.findIndex((x) => x.id === p.id) + 1;
   const pins: MapPin[] = [...(pos ? [{ ...pos, label: "Tú", current: true }] : []), ...(dest ? [{ ...dest, label: "Destino" }] : [])];
@@ -378,7 +397,7 @@ export function Navigation() {
         <h1 className="t-card">{familyOf(p)}</h1>
         <p>{addressOf(p)}</p>
         {(p.address?.reference || p.notes) && <p className="muted t-small">{p.address?.reference ?? p.notes}</p>}
-        {!dest && <p className="danger t-small">Esta parada no tiene ubicación en el mapa. Llama a la familia.</p>}
+        {!dest && <p className="danger t-small">Esta parada no tiene ubicación en el mapa. Llama al recolector.</p>}
         {(guidance.gpsMessage || guidance.error) && <div className="nav-notice" role="status"><p>{guidance.gpsMessage ?? guidance.error}</p><button className="btn-text" disabled={guidance.loading} onClick={guidance.retry}>Reintentar</button></div>}
         <div className="nav-metrics">
           <div><p className="muted t-small">Por calles</p><p className="t-row">{guidance.remainingKm != null ? meters(guidance.remainingKm) : "—"}</p></div>
@@ -403,25 +422,29 @@ export function Confirm() {
   const r = useRider();
   const p = r.active;
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [conds, setConds] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!p) return;
     const seed: Record<string, number> = {};
-    for (const i of p.pickup_items ?? []) if (i.materials?.id) seed[i.materials.id] = i.confirmed_quantity ?? i.reported_quantity;
+    const cs: Record<string, string> = {};
+    for (const i of p.pickup_items ?? []) if (i.materials?.id) { seed[i.materials.id] = i.confirmed_quantity ?? i.reported_quantity; cs[i.materials.id] = i.condition ?? "limpia"; }
     setCounts(seed);
+    setConds(cs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p?.id]);
-  if (r.loading) return <main className="screen"><Loading /></main>;
+  if (r.loading) return <main className="screen"><Skeleton label="Cargando el recojo…" blocks={[96, 72, 72, 72, 56]} /></main>;
   if (!p) return <main className="screen"><TopBar title="Confirmar Recolección" /><Empty title="No hay un recojo en curso" icon="box" /></main>;
   const items: Row[] = p.pickup_items ?? [];
   const confirm = async () => {
     setBusy(true);
     try {
-      await confirmQuantities(p.id, Object.entries(counts));
+      await confirmQuantities(p.id, Object.entries(counts), conds);
       await completePickup(p.id);
       const remaining = r.assigned.filter((x) => x.id !== p.id).length;
       r.setCompleted({ name: familyOf(p), units: Object.values(counts).reduce((s, n) => s + n, 0), earnings: p.rider_earnings ?? 0, remaining });
       r.select(null);
+      tick();
       toast("¡Recolección confirmada!");
       await r.refresh();
       nav("/r/completado", { replace: true });
@@ -430,21 +453,25 @@ export function Confirm() {
   return (
     <main className="screen with-bar">
       <TopBar title="Confirmar Recolección" />
-      <section className="glass pad"><p className="t-row">{familyOf(p)}</p><p className="muted t-small">{addressOf(p)}</p><p className="muted t-small">{p.window_label}</p></section>
+      <section className="glass pad"><p className="t-row">{familyOf(p)}</p><p className="muted t-small">{addressOf(p)}</p><p className="muted t-small">{windowText(p)}</p></section>
       <p className="t-over">Cuenta lo que recibes</p>
       {items.length ? <div className="glass list">
-        {items.map((i) => <div key={i.materials?.id}>
+        {items.map((i) => <div key={i.materials?.id} style={{ flexWrap: "wrap" }}>
           <span className="badge">{(i.materials?.code ?? "").slice(0, 3)}</span>
-          <span className="min0"><span className="t-row" style={{ display: "block" }}>{i.materials?.name}</span><span className="muted t-small">La familia declaró {i.reported_quantity}</span></span>
+          <span className="min0"><span className="t-row" style={{ display: "block" }}>{i.materials?.name}</span><span className="muted t-small">El recolector declaró {i.reported_quantity}</span></span>
           <Stepper value={counts[i.materials?.id] ?? 0} label={i.materials?.name ?? "material"} onChange={(n) => setCounts({ ...counts, [i.materials.id]: n })} />
+          <div className="chips" role="radiogroup" aria-label={`Estado de ${i.materials?.name ?? "material"}`} style={{ flexBasis: "100%" }}>
+            {([["limpia", "Limpia"], ["aplastada", "Aplastada"], ["sucia", "Con líquido o sucia"]] as const).map(([k, label]) => <button key={k} role="radio" aria-checked={(conds[i.materials?.id] ?? "limpia") === k} aria-pressed={(conds[i.materials?.id] ?? "limpia") === k} className="glass filter" onClick={() => setConds({ ...conds, [i.materials.id]: k })}>{label}</button>)}
+          </div>
         </div>)}
       </div> : <p className="muted">No hay materiales declarados</p>}
       <p className="muted t-small">Lo que cuentes aquí es lo que se registra: los puntos del vecino y tu pago salen de este número.</p>
       <section className="hero">
-        <p className="t-over">Ganarás</p>
-        <p className="t-hero">{soles(p.rider_earnings)}</p>
+        <p className="t-over">Ganancia estimada</p>
+        <p className="t-hero">≈ {soles(p.rider_earnings)}</p>
+        <p className="soft t-small">Se paga al pesar · S/ 0,35 por kg pesado + S/ 6 por ruta de 12 recojos</p>
         {(p.total_weight_kg ?? 0) > 0 && <div className="between hero-rule"><span className="soft">Peso total</span><span style={{ fontWeight: 800 }}>{Number(p.total_weight_kg).toFixed(2)} kg</span></div>}
-        <p className="soft t-small">Los puntos del generador se confirman en el acopio.</p>
+        <p className="soft t-small">Los puntos del recolector se confirman en el acopio.</p>
       </section>
       <div className="bottombar"><div><button className="btn btn-primary" disabled={busy} onClick={() => void confirm()}>{busy ? "Confirmando…" : "Confirmar recolección"} <Icon name="check" /></button></div></div>
     </main>
@@ -464,10 +491,10 @@ export function Completed() {
     <main className="screen">
       <div className="glass" style={{ width: 96, height: 96, borderRadius: "50%", display: "grid", placeItems: "center", margin: "24px auto 0", color: "var(--accent)" }}><Icon name="check" size={44} /></div>
       <div className="center"><h1 className="t-title">¡Recojo Completado!</h1><p className="muted">{c.name}</p></div>
-      <section className="hero"><p className="t-over">Tus ganancias</p><p className="t-hero">{soles(c.earnings)}</p></section>
+      <section className="hero"><p className="t-over">Ganancia estimada</p><p className="t-hero">≈ {soles(c.earnings)}</p><p className="soft t-small">Se paga al pesar</p></section>
       <section className="glass pad stack"><h2 className="t-row">Resumen del recojo</h2>
         <div className="between"><span className="muted">Materiales</span><span className="t-row">{c.units} unidades</span></div>
-        <div className="between"><span className="muted">Puntos al generador</span><span className="t-row">Se acreditan en el acopio</span></div>
+        <div className="between"><span className="muted">Puntos del recolector</span><span className="t-row">Se acreditan en el acopio</span></div>
       </section>
       <p className="glass pad row"><Icon name="route" /> {left === 0 ? "No te quedan paradas por ahora" : left === 1 ? "Te queda 1 parada en tu ruta" : `Te quedan ${left} paradas en tu ruta`}</p>
       <div className="grow" />

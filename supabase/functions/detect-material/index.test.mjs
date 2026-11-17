@@ -11,7 +11,7 @@ const brands = readFileSync(new URL("./brands.ts", import.meta.url), "utf8").rep
 const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8")
   .replace(/^import .*;\r?\n/gm, "");
 const js = stripTypeScriptTypes(brands + "\n" + source + `
-globalThis.helpers = { sign, canonical, verifyObservation, constantTimeEqual, OBSERVATION_TTL_MS, unusableAnswer, normBrand, PROMPT, foldPhotos, brandFromText, evidencedBrand };
+globalThis.helpers = { normBox2d, sign, canonical, verifyObservation, constantTimeEqual, OBSERVATION_TTL_MS, unusableAnswer, normBrand, PROMPT, foldPhotos, brandFromText, evidencedBrand };
 `);
 
 function harness(visionFetch) {
@@ -433,4 +433,11 @@ test("a brand stands only on the text read off its label", () => {
   // Off the catalog: only when its name is what was read.
   assert.equal(evidencedBrand("Marca Nueva", "MARCA NUEVA 500 ml"), "Marca Nueva");
   assert.equal(evidencedBrand("Marca Nueva", "500 ml"), null);
+});
+
+test("box_2d is read in Gemini's order, so a lying bottle is not transposed", () => {
+  const { normBox2d } = harness();
+  // Real answer for a bottle lying across the photo: rows 371..632, columns 0..997.
+  assert.deepEqual([...normBox2d([371, 0, 632, 997])], [0, 0.371, 0.997, 0.632]);
+  assert.equal(normBox2d([1, 2]), null);
 });

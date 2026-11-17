@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Empty, Failure, Icon, Loading, TopBar, useToast } from "../../components/ui";
 import { humanize, loadMarketNews, loadMaterialDemand, loadMyProfile, loadNotifications, loadPrices, markAllNotificationsRead, markNotificationRead, myEmail, updateMyProfile, type Row } from "../../lib/api";
 import { ago, initials, soles, useAsync } from "../../lib/util";
+import { PushCard } from "../../components/Push";
 
 /* ---------- Mercado Vivo: one screen, the role only changes its colour ---------- */
 
@@ -51,7 +52,7 @@ export function Market() {
             {n.summary && <p className="muted">{n.summary}</p>}
             <div className="between muted t-small">
               <span>{[n.source && `Fuente: ${n.source}`, ago(n.published_at)].filter(Boolean).join(" · ")}</span>
-              {n.url && <a className="accent" style={{ fontWeight: 800, padding: "14px 8px", flex: "none" }} href={n.url} target="_blank" rel="noreferrer">Abrir</a>}
+              {n.url && <a className="accent" style={{ fontWeight: 800, padding: "0 8px", minHeight: 48, display: "inline-flex", alignItems: "center", flex: "none" }} href={n.url} target="_blank" rel="noreferrer">Abrir</a>}
             </div>
           </article>)}
         </>}
@@ -79,6 +80,7 @@ export function Notifications() {
   return (
     <main className="screen">
       <TopBar title="Notificaciones" right={data?.some(isUnread) ? <button className="btn-text" style={{ padding: "0 8px" }} onClick={() => void all()}>Marcar leídas</button> : undefined} />
+      <PushCard />
       {loading ? <Loading text="Cargando notificaciones…" /> : error ? <Failure text={error} retry={() => void reload()} /> : !data?.length ? <Empty title="Sin notificaciones" text="Aquí te avisaremos de tus recojos, puntos y ganancias." icon="bell" /> :
         <div className="glass list">{data.map((n) => (
           <button key={n.id} onClick={() => one(n)} style={isUnread(n) ? { background: "var(--accent-tint)" } : undefined} aria-label={`${isUnread(n) ? "No leída. " : ""}${n.title}`}>

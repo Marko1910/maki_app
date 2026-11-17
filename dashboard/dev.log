@@ -1,0 +1,154 @@
+
+> maki-dashboard@0.1.0 dev
+> next dev -p 3100
+
+   ▲ Next.js 15.5.28
+   - Local:        http://localhost:3100
+   - Network:      http://100.86.52.29:3100
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 9.9s
+ ○ Compiling /login ...
+ ✓ Compiled /login in 6.7s (707 modules)
+ GET /login 200 in 7370ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 2.1s (815 modules)
+ GET /dashboard 200 in 2369ms
+ ✓ Compiled /mercado in 243ms (797 modules)
+ GET /mercado 200 in 434ms
+ ✓ Compiled /materiales in 237ms (804 modules)
+ GET /materiales 200 in 365ms
+ ✓ Compiled /call-center in 236ms (811 modules)
+ GET /call-center 200 in 410ms
+ ✓ Compiled /pagos in 276ms (818 modules)
+ GET /pagos 200 in 468ms
+ ✓ Compiled /balance in 330ms (825 modules)
+ GET /balance 200 in 516ms
+ ✓ Compiled /reportes in 283ms (832 modules)
+ GET /reportes 200 in 468ms
+ GET /login 200 in 87ms
+ GET /dashboard 200 in 41ms
+ ✓ Compiled in 767ms (815 modules)
+ GET /dashboard 200 in 116ms
+ GET /dashboard 200 in 171ms
+ ✓ Compiled /mercado in 122ms (492 modules)
+ GET /mercado 200 in 367ms
+ ✓ Compiled in 520ms (821 modules)
+ GET /mercado 200 in 80ms
+ ✓ Compiled in 356ms (821 modules)
+ GET /mercado 200 in 95ms
+ ✓ Compiled in 168ms (329 modules)
+ GET /mercado 200 in 46ms
+ GET /mercado 200 in 215ms
+ ✓ Compiled in 996ms (821 modules)
+ GET /mercado 200 in 131ms
+ GET /dashboard 200 in 165ms
+ ✓ Compiled /call-center in 243ms (497 modules)
+ GET /call-center 200 in 510ms
+ ✓ Compiled /materiales in 237ms (502 modules)
+ GET /materiales 200 in 468ms
+ ✓ Compiled /pagos in 198ms (507 modules)
+ GET /pagos 200 in 382ms
+ ✓ Compiled /balance in 305ms (512 modules)
+ GET /balance 200 in 476ms
+ ✓ Compiled /reportes in 220ms (512 modules)
+ GET /reportes 200 in 393ms
+ GET /dashboard 200 in 85ms
+ GET /call-center 200 in 147ms
+ GET /materiales 200 in 41ms
+ GET /mercado 200 in 51ms
+ GET /dashboard 200 in 32ms
+ ✓ Compiled in 996ms (831 modules)
+ GET /dashboard 200 in 152ms
+ ✓ Compiled in 158ms (329 modules)
+ GET /dashboard 200 in 39ms
+ ✓ Compiled in 389ms (831 modules)
+ GET /dashboard 200 in 115ms
+ ⨯ ./components/ui.tsx
+Error:   x Expected corresponding JSX closing tag for <Caja>
+    ,-[D:\proyects0_0\Maki_app\MAKI\dashboard\components\ui.tsx:79:1]
+ 76 |         {chip && <Chip color={chipColor}>{chip}</Chip>}
+ 77 |         {hint && <span className="text-[11px] text-text2 truncate">{hint}</span>}
+ 78 |       </div>
+ 79 |     </Card>
+    :       ^^^^
+ 80 |   );
+ 81 | }
+    `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./components/ui.tsx
+./app/(panel)/dashboard/page.tsx
+ ✓ Compiled in 829ms (831 modules)
+ GET /dashboard 200 in 157ms
+ ✓ Compiled in 640ms (833 modules)
+ GET /dashboard 200 in 116ms
+ ✓ Compiled in 432ms (833 modules)
+ GET /dashboard 200 in 75ms
+ ✓ Compiled in 203ms (330 modules)
+ GET /dashboard 200 in 44ms
+ GET /mercado 200 in 272ms
+ ⨯ ./components/ui.tsx
+Error:   x Expected '>', got 'Caja'
+    ,-[D:\proyects0_0\Maki_app\MAKI\dashboard\components\ui.tsx:71:1]
+ 68 |         {chip && <Chip color={chipColor}>{chip}</Chip>}
+ 69 |         {hint && <span className="text-[11px] text-text2 truncate">{hint}</span>}
+ 70 |       </div>
+ 71 |     </Caja>
+    :       ^^^^
+ 72 |   );
+ 73 | }
+    `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./components/ui.tsx
+./app/(panel)/dashboard/page.tsx
+ ✓ Compiled in 475ms (833 modules)
+ GET /mercado 200 in 89ms
+ GET /mercado 200 in 140ms
+ GET /mercado 200 in 93ms
+ ✓ Compiled in 752ms (833 modules)
+ GET /mercado 200 in 139ms
+ ✓ Compiled in 314ms (833 modules)
+ GET /mercado 200 in 64ms
+ ✓ Compiled in 680ms (833 modules)
+ GET /mercado 200 in 74ms
+ ✓ Compiled in 137ms (330 modules)
+ GET /mercado 200 in 40ms
+ GET /mercado 200 in 220ms
+ ✓ Compiled in 608ms (833 modules)
+ GET /mercado 200 in 104ms
+ GET /mercado 200 in 366ms
+ ✓ Compiled in 479ms (833 modules)
+ GET /mercado 200 in 80ms
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled in 696ms (833 modules)
+ ⨯ ReferenceError: Cargando is not defined
+    at PanelLayout (app\(panel)\layout.tsx:100:14)
+   98 |               seco que los esqueletos de cada pantalla existen para evitar. */}
+   99 |           {listo ? children : (
+> 100 |             <Cargando etiqueta="Abriendo el centro">
+      |              ^
+  101 |               <SkeletonKpis n={3} />
+  102 |               <SkeletonBloque alto="h-[380px]" />
+  103 |             </Cargando> {
+  digest: '655307693'
+}
+ GET /mercado 500 in 626ms
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ ✓ Compiled in 371ms (833 modules)
+ GET /mercado 200 in 353ms
+ ✓ Compiled in 136ms (330 modules)
+ GET /mercado 200 in 35ms
+ GET /mercado 200 in 63ms
+ GET /dashboard 200 in 181ms
+ GET /materiales 200 in 107ms
+ GET /reportes 200 in 83ms
+ GET /mercado 200 in 102ms

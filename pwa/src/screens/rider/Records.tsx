@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bars, Empty, Failure, Icon, Loading, Metric, NavRow, TopBar, useToast } from "../../components/ui";
+import { Bars, Empty, Failure, Icon, Metric, NavRow, Skeleton, TopBar, useToast } from "../../components/ui";
 import { createDelivery, humanize, loadCenters, loadMyAchievements, loadMyDeliveries, loadRiderEarnings, loadRiderHistory, loadUndeliveredPickups, signOut, type Row } from "../../lib/api";
-import { ago, dayGroup, initials, kg, sameDay, soles, STATUS, useAsync, VEHICLE } from "../../lib/util";
+import { ago, dayGroup, initials, kg, sameDay, soles, STATUS, stopAddress, useAsync, VEHICLE } from "../../lib/util";
 import { Leaderboard } from "../family/Family";
 import { useRider } from "./Work";
 
@@ -31,17 +31,18 @@ export function Delivery() {
     catch (e) { toast(humanize(e)); } finally { setBusy(false); }
   };
   return (
-    <main className="screen">
+    <main className={`screen${data?.load.length ? " with-bar" : ""}`}>
       <TopBar title="Entregar en acopio" />
-      {loading ? <Loading text="Cargando tu carga…" /> : error ? <Failure text={error} retry={() => void reload()} /> : <>
+      {loading ? <Skeleton label="Cargando tu carga…" blocks={[72, 72, 72]} /> : error ? <Failure text={error} retry={() => void reload()} /> : <>
         <p className="t-over">Recojos que llevas</p>
+        <p className="muted t-small">≈ estimado, se paga al pesar · S/ 0,35 por kg pesado + S/ 6 por ruta de 12 recojos</p>
         {data?.load.length ? <div className="glass list">
           {data.load.map((p) => {
             const on = !off.has(p.id);
             return <button key={p.id} role="checkbox" aria-checked={on} aria-label={`${on ? "Quitar de" : "Incluir en"} la entrega: ${p.generator?.display_name}`} onClick={() => toggle(p.id)}>
               <span className="badge" style={on ? { background: "var(--accent)", color: "#fff", border: 0 } : undefined}>{on && <Icon name="check" size={18} />}</span>
-              <span className="min0"><span className="muted t-small" style={{ display: "block" }}>{p.code}</span><span className="t-row" style={{ display: "block" }}>{p.generator?.display_name ?? "Vecino"}</span><span className="muted t-small">{p.address?.address_line}</span></span>
-              <span className="money" style={{ flex: "none" }}>{soles(p.rider_earnings)}</span>
+              <span className="min0"><span className="muted t-small" style={{ display: "block" }}>{p.code}</span><span className="t-row" style={{ display: "block" }}>{p.generator?.display_name ?? "Vecino"}</span><span className="muted t-small">{stopAddress(p)}</span></span>
+              <span className="money" style={{ flex: "none" }}>≈ {soles(p.rider_earnings)}</span>
             </button>;
           })}
         </div> : <Empty title="No llevas recojos sin entregar" text="Cuando cierres un recojo aparecerá aquí para llevarlo al acopio." icon="box" />}
@@ -54,7 +55,8 @@ export function Delivery() {
               <span className="radio" />
             </button>)}
           </div> : <p className="muted">No hay acopios disponibles</p>}
-          <button className="btn btn-primary" disabled={busy} onClick={() => void send()}>{busy ? "Abriendo la entrega…" : "Salir hacia el acopio"} <Icon name="arrow" /></button>
+          {/* Pinned, like Confirmar: at the end of the list it could sit under the phone's navigation bar. */}
+          <div className="bottombar"><div><button className="btn btn-primary" disabled={busy} onClick={() => void send()}>{busy ? "Abriendo la entrega…" : "Salir hacia el acopio"} <Icon name="arrow" /></button></div></div>
         </>}
         {!!data?.past.length && <>
           <p className="t-over">Entregas anteriores</p>
@@ -87,7 +89,7 @@ export function Earnings() {
   return (
     <main className="screen">
       <TopBar title="Mis Ganancias" />
-      {loading ? <Loading text="Cargando tus ganancias…" /> : error ? <Failure text={error} retry={() => void reload()} /> : <>
+      {loading ? <Skeleton label="Cargando tus ganancias…" blocks={[160, 64, 64, 64]} /> : error ? <Failure text={error} retry={() => void reload()} /> : <>
         <section className="hero">
           <p className="t-over">Ganado este mes</p>
           <p className="t-hero">{soles(month)}</p>
@@ -129,14 +131,14 @@ export function RiderHistory() {
     <main className="screen">
       <TopBar title="Mi Historial" />
       <div className="chips">{["Todos", "Hoy", "Semana", "Mes"].map((f) => <button key={f} className="glass filter" aria-pressed={filter === f} onClick={() => setFilter(f)}>{f}</button>)}</div>
-      {loading ? <Loading text="Cargando tu historial…" /> : error ? <Failure text={error} retry={() => void reload()} /> : !shown.length ? <Empty title={data?.length ? "Sin recojos en este periodo" : "Todavía no has completado recojos"} text={data?.length ? "Prueba con otro filtro de fecha." : "Toma una solicitud del tablero y aparecerá aquí."} icon="history" /> : groups.map((g) => (
+      {loading ? <Skeleton label="Cargando tu historial…" blocks={[56, 72, 72, 72]} /> : error ? <Failure text={error} retry={() => void reload()} /> : !shown.length ? <Empty title={data?.length ? "Sin recojos en este periodo" : "Todavía no has completado recojos"} text={data?.length ? "Prueba con otro filtro de fecha." : "Toma una solicitud del tablero y aparecerá aquí."} icon="history" /> : groups.map((g) => (
         <section className="stack" key={g}>
           <p className="t-over">{g}</p>
           <div className="glass list">{shown.filter((p) => dayGroup(p.completed_at ?? p.created_at) === g).map((p) => <div key={p.id}>
             <span className="badge"><Icon name="recycle" /></span>
-            <span className="min0"><span className="t-row" style={{ display: "block" }}>{p.generator?.display_name ?? "Vecino"}</span><span className="muted t-small" style={{ display: "block" }}>{p.address?.address_line}</span>
+            <span className="min0"><span className="t-row" style={{ display: "block" }}>{p.generator?.display_name ?? "Vecino"}</span><span className="muted t-small" style={{ display: "block" }}>{stopAddress(p)}</span>
               <span className="row" style={{ gap: 6 }}><span className={`chip ${p.status === "completed" ? "chip-accent" : "chip-off"}`}>{STATUS[p.status] ?? p.status}</span><span className="muted t-small">{ago(p.completed_at ?? p.created_at)}</span></span></span>
-            {p.status === "completed" && <span className="money" style={{ flex: "none" }}>+{soles(p.rider_earnings)}</span>}
+            {p.status === "completed" && <span className="money" style={{ flex: "none" }}>≈ {soles(p.rider_earnings)}</span>}
           </div>)}</div>
         </section>
       ))}
@@ -159,7 +161,7 @@ export function Stats() {
   return (
     <main className="screen">
       <TopBar title="Mis Estadísticas" />
-      {loading ? <Loading text="Cargando tus estadísticas…" /> : error ? <Failure text={error} retry={() => void reload()} /> : <>
+      {loading ? <Skeleton label="Cargando tus estadísticas…" blocks={[120, 160, 64]} /> : error ? <Failure text={error} retry={() => void reload()} /> : <>
         <section className="hero"><div className="grid2">
           <div><p className="t-title">{kg(profile?.total_recycled_kg)}</p><p className="soft t-small">Reciclado</p></div>
           <div><p className="t-title">{kg(profile?.co2_avoided_kg)}</p><p className="soft t-small">CO₂ evitado</p></div>
@@ -180,7 +182,7 @@ export function Stats() {
 export function RiderProfile() {
   const nav = useNavigate();
   const { profile: p, name, loading, error, refresh } = useRider();
-  if (loading) return <main className="screen with-nav"><Loading text="Cargando tu perfil…" /></main>;
+  if (loading) return <main className="screen with-nav"><Skeleton label="Cargando tu perfil…" blocks={[120, 64, 64, 64, 64]} /></main>;
   if (error) return <main className="screen with-nav"><Failure text={error} retry={() => void refresh()} /></main>;
   return (
     <main className="screen with-nav">

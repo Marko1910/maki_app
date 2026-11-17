@@ -1,0 +1,758 @@
+package pe.ruma.app.data
+
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class ScanDateDto(val detected_at: String)
+
+// ---- Auth ----
+@Serializable
+data class CredentialsDto(val email: String, val password: String)
+
+/**
+ * Sign-up body. [data] lands in `raw_user_meta_data`, which the `handle_new_user`
+ * trigger reads to create the profile row and its role extension (generator_profiles
+ * / rider_profiles) — so the role must be chosen before the account is created.
+ */
+@Serializable
+data class SignUpDto(
+    val email: String,
+    val password: String,
+    val data: SignUpMetaDto,
+)
+
+@Serializable
+data class SignUpMetaDto(
+    val role: String,
+    val full_name: String,
+    val display_name: String,
+    val phone: String? = null,
+    /** "¿Te invitó alguien?": the database attaches it at sign-up (handle_new_user); a bad code never blocks it. */
+    val referral_code: String? = null,
+)
+
+@Serializable
+data class RefreshDto(val refresh_token: String)
+
+@Serializable
+data class SessionDto(
+    // Blank when sign-up needs an email confirmation: GoTrue then returns the
+    // bare user object with no tokens at all.
+    val access_token: String = "",
+    val refresh_token: String? = null,
+    val user: UserDto? = null,
+)
+
+@Serializable
+data class UserDto(val id: String, val email: String? = null)
+
+// ---- Domain (PostgREST rows) ----
+@Serializable
+data class ProfileDto(
+    val display_name: String? = null,
+    val full_name: String? = null,
+)
+
+/** The account's role (generador | eco_rider | operador): decides which app opens. */
+@Serializable
+data class ProfileRoleDto(val role: String? = null)
+
+@Serializable
+data class GeneratorProfileDto(
+    val points_balance: Int = 0,
+    /** Booked when the rider collects; spendable once the acopio weighs it. */
+    val points_pending: Int = 0,
+    val cash_earned_total: Double = 0.0,
+    val current_streak_days: Int = 0,
+    val co2_avoided_kg: Double = 0.0,
+    val recycled_kg: Double = 0.0,
+    val water_saved_l: Double = 0.0,
+    val trees_equivalent: Double = 0.0,
+    val profiles: ProfileDto? = null,
+)
+
+// ---- Wallet ----
+@Serializable
+data class RedemptionOptionDto(
+    val id: String = "",
+    val code: String = "",
+    val name: String = "",
+    val kind: String = "",
+    val description: String? = null,
+    val points_per_unit: Double = 0.0,
+    val min_points: Int = 0,
+    val unit_value: Double = 0.0,
+    val icon: String? = null,
+    val color: String? = null,
+    val sort_order: Int = 0,
+    /** Who honours the benefit ("Municipalidad", a store chain…); shown under the title. */
+    val partner: String? = null,
+    val metadata: OptionMetaDto? = null,
+)
+
+/** A percent option (arbitrios) is shown and capped in % of the yearly fee, never in soles. */
+@Serializable
+data class OptionMetaDto(
+    val unit: String? = null,
+    val percent_per_unit: Double = 1.0,
+    val max_percent_year: Double = 0.0,
+)
+
+@Serializable
+data class RedemptionDto(
+    val kind: String = "",
+    val points_spent: Int = 0,
+    val monetary_value: Double = 0.0,
+    val quantity: Double = 0.0,
+    val status: String? = null,
+    val created_at: String = "",
+    val redemption_options: OptionNameDto? = null,
+)
+
+@Serializable
+data class OptionNameDto(val name: String? = null, val icon: String? = null, val code: String? = null)
+
+// ---- Rankings ----
+@Serializable
+data class LeaderboardPeriodDto(
+    val id: String,
+    val scope: String = "",
+    val period_type: String = "",
+    val block_label: String? = null,
+    val period_start: String? = null,
+    val period_end: String? = null,
+    val status: String? = null,
+)
+
+@Serializable
+data class LeaderboardEntryDto(
+    val rank: Int = 0,
+    val display_name: String? = null,
+    val points: Int = 0,
+    val streak_days: Int = 0,
+    val delta: Int = 0,
+    val user_id: String = "",
+)
+
+@Serializable
+data class RankingRewardDto(
+    val rank: Int = 0,
+    val reward_multiplier: Double = 1.0,
+    val reward_points: Int = 0,
+    val description: String? = null,
+)
+
+// ---- Materials / Address ----
+@Serializable
+data class MaterialDto(
+    val id: String = "",
+    val code: String = "",
+    val name: String = "",
+    val icon: String? = null,
+    val color: String? = null,
+    val points_per_unit: Double = 0.0,
+    /** What a kilo of this material is worth in Eco-Puntos. */
+    val points_per_kg: Double = 0.0,
+    val sort_order: Int = 0,
+)
+
+@Serializable
+data class AddressDto(
+    val id: String = "",
+    val label: String? = null,
+    val address_line: String = "",
+    val reference: String? = null,
+    val block_label: String? = null,
+    val is_primary: Boolean = false,
+    // Most pickups have no coordinates of their own; the address does.
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+)
+
+@Serializable
+data class NewAddress(
+    val profile_id: String,
+    val address_line: String,
+    val is_primary: Boolean = true,
+    // Set on sign-up from the device fix: dispatch needs a point, not a string.
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+)
+
+@Serializable
+data class AddressPatch(
+    val address_line: String,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+)
+
+// ---- Notifications ----
+@Serializable
+data class NotificationDto(
+    val id: Long = 0,
+    val kind: String = "",
+    val title: String = "",
+    val body: String? = null,
+    val is_read: Boolean = false,
+    val created_at: String = "",
+    /** "pickup" when the notification is about one; tapping it opens that pickup. */
+    val reference_type: String? = null,
+)
+
+// ---- Pickups (tracking + history) ----
+@Serializable
+data class MaterialNameDto(val id: String? = null, val name: String? = null, val code: String? = null, val icon: String? = null)
+
+@Serializable
+data class PickupItemDto(
+    val reported_quantity: Int = 0,
+    val confirmed_quantity: Int? = null,
+    /** limpia | aplastada | sucia: set by the rider at the door; the database prices it. */
+    val condition: String? = null,
+    val points: Int = 0,
+    val materials: MaterialNameDto? = null,
+)
+
+/** A profile embedded in a pickup (the rider for the family, the family for the rider). */
+@Serializable
+data class RiderNameDto(val display_name: String? = null, val phone: String? = null)
+
+/** Body of every RPC that takes just a pickup (complete_pickup, release_pickup). */
+@Serializable
+data class RpcPickupId(val p_pickup_id: String)
+
+@Serializable
+data class RpcCreateDelivery(val p_center_id: String, val p_pickup_ids: List<String>)
+
+@Serializable
+data class PickupDto(
+    val id: String? = null,
+    val code: String? = null,
+    val status: String = "",
+    val scheduled_date: String? = null,
+    val window_label: String? = null,
+    val eta_minutes: Int? = null,
+    val generator_points_awarded: Int? = null,
+    /** Set when the acopio weighed the batch: the points actually credited. */
+    val generator_points_final: Int? = null,
+    val rider_id: String? = null,
+    val rider_earnings: Double? = null,
+    val total_weight_kg: Double? = null,
+    val created_at: String? = null,
+    val completed_at: String? = null,
+    // When each step happened, for the timeline on the pickup detail.
+    val requested_at: String? = null,
+    val assigned_at: String? = null,
+    val started_at: String? = null,
+    val arrived_at: String? = null,
+    val cancelled_at: String? = null,
+    // Rider history/route extras: outcome of the stop and where it is.
+    val match_status: String? = null,   // exact | partial | none
+    val condition: String? = null,      // good | regular | bad
+    val notes: String? = null,
+    val cancel_reason: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val distance_m: Double? = null,
+    val pickup_items: List<PickupItemDto> = emptyList(),
+    val rider: RiderNameDto? = null,
+    // Rider-side embeds (null on generator queries).
+    val generator: RiderNameDto? = null,
+    val address: AddressDto? = null,
+)
+
+@Serializable
+data class RiderEarningDto(
+    val amount: Double = 0.0,
+    val created_at: String = "",
+    val type: String? = null,
+    val description: String? = null,
+)
+
+@Serializable
+data class RiderProfileDto(
+    val rating: Double? = null,
+    val vehicle_type: String? = null,
+    val rating_count: Int = 0,
+    val total_collections: Int = 0,
+    val total_recycled_kg: Double = 0.0,
+    val co2_avoided_kg: Double = 0.0,
+    val earnings_balance: Double = 0.0,
+    val earnings_lifetime: Double = 0.0,
+    val monthly_goal: Double? = null,
+    /** Shift switch: what `assign_nearest_rider` filters on. */
+    val is_available: Boolean = true,
+    val rider_code: String? = null,
+    /** Last heartbeat: the route's start when this phone has no fix of its own. */
+    val current_latitude: Double? = null,
+    val current_longitude: Double? = null,
+)
+
+// ---- Rider route (routes + route_stops → the optimised stop list) ----
+@Serializable
+data class RouteStopDto(
+    val sequence: Int = 0,
+    val status: String = "",            // pending | en_route | arrived | collected | skipped
+    val eta_minutes: Int? = null,
+    val distance_from_prev_m: Double? = null,
+    val pickups: PickupDto? = null,
+)
+
+@Serializable
+data class RouteDto(
+    val id: String = "",
+    val status: String = "",            // planned | active | completed | cancelled
+    val route_date: String? = null,
+    val total_stops: Int = 0,
+    val total_distance_m: Double? = null,
+    val total_duration_min: Int? = null,
+    val route_stops: List<RouteStopDto> = emptyList(),
+)
+
+// ---- Achievements (rider badges) ----
+@Serializable
+data class AchievementDto(
+    val name: String = "",
+    val icon: String? = null,
+    val tier: String? = null,
+)
+
+@Serializable
+data class UserAchievementDto(
+    val progress: Double = 0.0,
+    val unlocked: Boolean = false,
+    val achievements: AchievementDto? = null,
+)
+
+// ---- Detections (history) ----
+@Serializable
+data class DetectionItemDto(
+    val quantity: Int = 0,
+    val confidence: Double? = null,
+    val quality_score: Double? = null,
+    val points: Int = 0,
+    val materials: MaterialNameDto? = null,
+)
+
+@Serializable
+data class DetectionDto(
+    val status: String = "",
+    val total_points: Int = 0,
+    val total_value: Double = 0.0,
+    val total_weight_kg: Double = 0.0,
+    val detected_at: String = "",
+    val detection_items: List<DetectionItemDto> = emptyList(),
+)
+
+// ---- Write payloads ----
+@Serializable
+data class NewRedemption(
+    val user_id: String,
+    val option_id: String?,
+    val kind: String,
+    val points_spent: Int,
+    val monetary_value: Double,
+)
+
+@Serializable
+data class NewPickup(
+    val generator_id: String,
+    val address_id: String? = null,
+    val scheduled_date: String? = null,
+    val window_label: String? = null,
+    /** Where the phone is when the family asks — the rider comes here. */
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+)
+
+@Serializable
+data class NewPickupItem(
+    val pickup_id: String,
+    val material_id: String,
+    val reported_quantity: Int,
+)
+
+// ---- Dispatch (assign_nearest_rider RPC) + live rider position ----
+
+@Serializable
+data class RpcAssignRider(val p_pickup_id: String)
+
+/** One row from assign_nearest_rider; empty list = no rider available right now. */
+@Serializable
+data class AssignedRiderDto(
+    val rider_id: String? = null,
+    val rider_name: String? = null,
+    val distance_m: Double? = null,
+    val eta_minutes: Int? = null,
+)
+
+/** Where the assigned rider is right now (RLS exposes it only to their generator). */
+@Serializable
+data class RiderPositionDto(
+    val current_latitude: Double? = null,
+    val current_longitude: Double? = null,
+    val last_location_at: String? = null,
+)
+
+@Serializable
+data class RiderLocationPatch(
+    val current_latitude: Double,
+    val current_longitude: Double,
+    val last_location_at: String,
+)
+
+// ---- AI scan (server-authoritative, via the detect-material Edge Function) ----
+
+/** Liveness motion summary captured on-device during the scan window. */
+@Serializable
+data class MotionDto(val maxGyroDps: Double, val samples: Int, val windowMs: Long)
+
+/** What the server counted in one frame, signed by it — the client only relays it back. */
+@Serializable
+data class ScanObsItemDto(
+    val code: String,
+    val quantity: Int,
+    val quality: Double,
+    /** The label the server read ("Coca-Cola"); part of the signature, so it must be relayed verbatim. */
+    val brand: String? = null,
+)
+
+/** [group] is the "+ Agregar más" round the frame belongs to; it is signed with the count. */
+@Serializable
+data class ScanObservationDto(val items: List<ScanObsItemDto>, val token: String, val group: Int = 0)
+
+/**
+ * One call to detect-material. `preview` scores a frame of the live scan (nothing is
+ * saved); `commit` closes the session and persists the detection from the signed
+ * observations gathered along the way.
+ */
+@Serializable
+data class DetectRequest(
+    val session_id: String,
+    val mode: String,
+    val frames: List<String> = emptyList(),
+    val motion: MotionDto? = null,
+    val observations: List<ScanObservationDto> = emptyList(),
+    /** Preview only: which "+ Agregar más" round this frame counts toward. */
+    val group: Int = 0,
+)
+
+@Serializable
+data class DetectedItemDto(
+    val code: String = "",
+    val name: String = "",
+    val quantity: Int = 0,
+    val confidence: Double = 0.0,
+    val quality: Double = 0.0,
+    val points: Int = 0,
+    /** Commercial brand read on the label; null when none was legible. */
+    val brand: String? = null,
+    /** Material row id, so the pickup can be built without re-looking-up the catalog. */
+    val material_id: String? = null,
+    /** [x0,y0,x1,y1] as 0..1 fractions of the captured frame; null when the model gave none. */
+    val box: List<Double>? = null,
+    /** Commit only: units per brand read on the labels, e.g. {"Coca-Cola": 3}. */
+    val brands: Map<String, Int> = emptyMap(),
+)
+
+/**
+ * Response of detect-material. On success carries the persisted detection;
+ * on an anti-spoof/empty result [rejected]+[message] are set (HTTP 200, nothing saved).
+ */
+@Serializable
+data class DetectResultDto(
+    val detection_id: String? = null,
+    val status: String? = null,
+    val total_points: Int = 0,
+    val total_value: Double = 0.0,
+    val items: List<DetectedItemDto> = emptyList(),
+    /** Preview only: the server's signature over this frame's count. */
+    val token: String? = null,
+    /** How long to wait before the next frame when the detector is rate-limited. */
+    val retry_after_ms: Long? = null,
+    val rejected: String? = null,   // "liveness" | "spoof" | "no_material" | "busy"
+    val message: String? = null,
+    val error: String? = null,
+)
+
+// ---- Assistant agent (ruma-assistant Edge Function) ----
+
+@Serializable
+data class ChatTurnDto(val role: String, val content: String)
+
+@Serializable
+data class AssistantRequest(val messages: List<ChatTurnDto>)
+
+@Serializable
+data class AssistantReplyDto(val reply: String? = null, val error: String? = null)
+
+// ---- Challenges (retos; progress advances server-side on pickup settle) ----
+
+@Serializable
+data class UserChallengeDto(val progress: Double = 0.0, val is_completed: Boolean = false)
+
+@Serializable
+data class ChallengeDto(
+    val id: String = "",
+    val name: String = "",
+    val description: String? = null,
+    val target_value: Double = 0.0,
+    val target_unit: String? = null,
+    val reward_points: Int = 0,
+    val user_challenges: List<UserChallengeDto> = emptyList(),
+)
+
+// ---- Chat history (chat_conversations + chat_messages tables) ----
+
+@Serializable
+data class ChatConversationDto(
+    val id: String = "",
+    val title: String? = null,
+    val last_message_at: String? = null,
+    val created_at: String = "",
+)
+
+@Serializable
+data class ChatMessageDto(val role: String = "user", val content: String = "")
+
+@Serializable
+data class NewConversation(val user_id: String, val title: String?)
+
+@Serializable
+data class NewChatMessage(val conversation_id: String, val role: String, val content: String)
+
+// ---- Market prices (v_material_prices view) ----
+
+@Serializable
+data class MaterialPriceDto(
+    val code: String = "",
+    val name: String = "",
+    val price_per_kg: Double = 0.0,
+    val pct_change: Double = 0.0,
+)
+
+// ---- Collection centers (acopio map) ----
+
+@Serializable
+data class CenterMaterialDto(val buy_price_per_kg: Double = 0.0, val materials: MaterialNameDto? = null)
+
+@Serializable
+data class CollectionCenterDto(
+    val id: String = "",
+    val name: String = "",
+    val address_line: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val phone: String? = null,
+    val is_open: Boolean = true,
+    val center_materials: List<CenterMaterialDto> = emptyList(),
+)
+
+/**
+ * What a PATCH to `profiles` writes. No default values on purpose: a property
+ * with a default is omitted when it equals it, so `phone = null` would never
+ * travel and clearing the number would silently do nothing.
+ */
+@Serializable
+data class ProfileUpdateDto(
+    val display_name: String,
+    val phone: String?,
+)
+
+/** The signed-in account's own editable fields. */
+@Serializable
+data class MyProfileDto(
+    val display_name: String? = null,
+    val phone: String? = null,
+    val avatar_url: String? = null,
+)
+
+// ---- Entregas al acopio ----
+
+@Serializable
+data class DeliveryDto(
+    val id: String = "",
+    val code: String? = null,
+    val status: String = "",
+    val total_kg: Double? = null,
+    val rider_amount: Double? = null,
+    val departed_at: String? = null,
+    val settled_at: String? = null,
+    val center: CenterNameDto? = null,
+    /** Only the ids: the screen counts the stops, it never lists them again. */
+    val delivery_pickups: List<DeliveryPickupRefDto> = emptyList(),
+)
+
+@Serializable
+data class CenterNameDto(val name: String? = null)
+
+@Serializable
+data class DeliveryPickupRefDto(val pickup_id: String = "")
+
+// ---- Mercado Vivo (precios, demanda y noticias) ----
+
+@Serializable
+data class MarketNewsDto(
+    val id: String = "",
+    val kind: String = "price",
+    val title: String = "",
+    val summary: String? = null,
+    val material_code: String? = null,
+    val source: String? = null,
+    val url: String? = null,
+    val published_at: String = "",
+)
+
+/** One row of `v_material_demand`: who is buying this material and how badly. */
+@Serializable
+data class MaterialDemandDto(
+    val code: String = "",
+    val name: String = "",
+    val centros: Int = 0,
+    val mejor_precio: Double? = null,
+    val stock_kg: Double = 0.0,
+    val demanda: String = "media",
+)
+
+// ---- Street routing (OSRM route/trip, via StreetRouter) ----
+
+@Serializable
+data class OsrmGeometryDto(val coordinates: List<List<Double>> = emptyList())
+
+/** One hop between two consecutive waypoints — what each stop's own ETA comes from. */
+@Serializable
+data class OsrmHopDto(val distance: Double = 0.0, val duration: Double = 0.0, val steps: List<OsrmStepDto> = emptyList())
+
+@Serializable
+data class OsrmManeuverDto(val type: String = "", val modifier: String = "", val exit: Int? = null, val location: List<Double> = emptyList())
+
+@Serializable
+data class OsrmStepDto(val distance: Double = 0.0, val duration: Double = 0.0, val name: String = "", val maneuver: OsrmManeuverDto = OsrmManeuverDto())
+
+@Serializable
+data class OsrmLegDto(
+    val distance: Double = 0.0,
+    val duration: Double = 0.0,
+    val geometry: OsrmGeometryDto? = null,
+    val legs: List<OsrmHopDto> = emptyList(),
+)
+
+@Serializable
+data class OsrmWaypointDto(val waypoint_index: Int = 0)
+
+@Serializable
+data class OsrmResponseDto(
+    val code: String = "",
+    val routes: List<OsrmLegDto> = emptyList(),
+    val trips: List<OsrmLegDto> = emptyList(),
+    val waypoints: List<OsrmWaypointDto> = emptyList(),
+)
+
+// ---- RPC args (scan→pickup→points loop) ----
+
+@Serializable
+data class RpcCreatePickup(
+    val p_address_id: String? = null,
+    val p_scheduled_date: String? = null,
+    val p_window_label: String? = null,
+    /** Device fix; omitted (null) when there is none and the address coordinates apply. */
+    val p_latitude: Double? = null,
+    val p_longitude: Double? = null,
+)
+
+// ---------- Invita y gana (rpc/my_referral_summary, rpc/apply_referral_code) ----------
+
+/** The caller's referral page, as the database computes it: amounts, caps and every invite's state. */
+@Serializable
+data class ReferralSummaryDto(
+    val code: String = "",
+    val referrer_points: Int = 0,
+    val referred_points: Int = 0,
+    val min_kg: Double = 1.0,
+    val monthly_cap: Int = 5,
+    val attach_days: Int = 7,
+    val paid_this_month: Int = 0,
+    val earned_points: Int = 0,
+    /** Still in the first days and never weighed: the "¿Te invitó alguien?" field is offered. */
+    val can_apply: Boolean = false,
+    val invited_by: ReferralInviteDto? = null,
+    val invites: List<ReferralInviteDto> = emptyList(),
+)
+
+/** One invitation: `pendiente` (reason null or `tope_mensual`), `pagado`, or `rechazado` with its reason. */
+@Serializable
+data class ReferralInviteDto(
+    val name: String? = null,
+    val status: String = "pendiente",
+    val reason: String? = null,
+    val points: Int = 0,
+    val created_at: String? = null,
+    val decided_at: String? = null,
+)
+
+@Serializable
+data class RpcApplyReferral(val p_code: String)
+
+// ---------- Planes (plans, rpc/my_plan, rpc/request_plan, rpc/start_plan_trial, rpc/cancel_my_plan) ----------
+
+/** One line of the plan's list. `status` is `activo` (the database applies it) or `pronto` (text only). */
+@Serializable
+data class PlanFeatureDto(val title: String = "", val detail: String? = null, val status: String = "activo")
+
+/** A row of the public catalog `plans`; prices are what the database charges, never what the app asks. */
+@Serializable
+data class PlanDto(
+    val code: String,
+    val name: String = "",
+    val tagline: String? = null,
+    val price_month: Double = 0.0,
+    val price_year: Double? = null,
+    val trial_days: Int = 0,
+    val features: List<PlanFeatureDto> = emptyList(),
+)
+
+@Serializable
+data class PlanActiveDto(
+    val id: String = "",
+    val plan_code: String = "",
+    val name: String = "",
+    val period: String = "month",
+    val ends_at: String? = null,
+    /** Set once the user asked not to renew: benefits stay until `ends_at`. */
+    val cancelled_at: String? = null,
+)
+
+@Serializable
+data class PlanPendingDto(
+    val id: String = "",
+    val plan_code: String = "",
+    val name: String = "",
+    val period: String = "month",
+    val amount: Double = 0.0,
+    val reference: String = "",
+)
+
+@Serializable
+data class PlanPaymentDto(
+    val yape_number: String? = null,
+    val yape_holder: String? = null,
+    val instructions: String? = null,
+)
+
+@Serializable
+data class MyPlanDto(
+    val active: PlanActiveDto? = null,
+    val active_until: String? = null,
+    val pending: PlanPendingDto? = null,
+    val trial_available: Boolean = false,
+    val payment: PlanPaymentDto? = null,
+)
+
+@Serializable
+data class RpcPlanPeriod(val p_plan: String, val p_period: String)
+
+@Serializable
+data class RpcPlanCode(val p_plan: String)
+
+@Serializable
+data class RpcCancelPlan(val p_subscription_id: String)

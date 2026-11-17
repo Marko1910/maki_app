@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+/* Los mismos tokens del diseño en Pencil (RumaColors / ui/theme). */
+@theme {
+  --color-surface: #ffffff;
+  --color-bg: #f5f7f6;
+  --color-border: #e5e9e7;
+  --color-text: #1a1a1a;
+  --color-text2: #6b7280;
+  --color-gen: #0f6e56;
+  --color-rider: #185fa5;
+  --color-admin: #d97a2b;
+  --color-money: #ba7517;
+  --color-success: #1e8e4f;
+  --color-error: #d32f2f;
+  --font-sans: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
+
+/* La sombra de tarjeta del diseño: #1A1A1A0F, offset 0/2, blur 10. */
+.ruma-card {
+  background: var(--color-surface);
+  border-radius: 14px;
+  box-shadow: 0 2px 10px rgb(26 26 26 / 0.06);
+}
+
+/* ── Movimiento ────────────────────────────────────────────────────────────
+   Las curvas de CSS son flojas: no tienen el impulso que hace que una
+   animación se sienta intencional. Estas son las fuertes.
+   Regla de la casa: nada de `transition: all`, nada de `ease-in` (empieza
+   lento justo cuando el ojo está mirando), nada por encima de 300 ms en UI. */
+@theme {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+/* Entrada en cascada de una lista. Se ve una sola vez por carga, así que
+   puede permitirse ser bonita; el retardo lo pone cada fila con --i. */
+.ruma-in {
+  opacity: 0;
+  transform: translateY(6px);
+  animation: ruma-in 260ms var(--ease-out) forwards;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+@keyframes ruma-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Barra de medición: crece desde la izquierda, como una cinta métrica. */
+.ruma-medir {
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: ruma-medir 420ms var(--ease-out) forwards;
+  animation-delay: calc(var(--i, 0) * 40ms + 60ms);
+}
+@keyframes ruma-medir {
+  to { transform: scaleX(1); }
+}
+
+/* El marcador llega después de que la barra terminó de medir. Nunca desde
+   scale(0): nada en el mundo real aparece de la nada. */
+.ruma-marcador {
+  opacity: 0;
+  animation: ruma-marcador 220ms var(--ease-out) forwards;
+  animation-delay: calc(var(--i, 0) * 40ms + 300ms);
+}
+@keyframes ruma-marcador {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Cualquier cosa que se presione responde al tacto. */
+.ruma-press {
+  transition: transform 160ms var(--ease-out), background-color 160ms ease;
+}
+.ruma-press:active {
+  transform: scale(0.97);
+}
+
+/* Detalle que se despliega. grid-template-rows 0fr→1fr es lo que permite
+   animar una altura que no se conoce de antemano. */
+.ruma-fold {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms var(--ease-out), opacity 180ms ease;
+  opacity: 0;
+}
+.ruma-fold[data-abierto="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.ruma-fold > * {
+  overflow: hidden;
+}
+
+/* El hover táctil es un falso positivo: en un móvil el tap lo dispara. */
+@media (hover: hover) and (pointer: fine) {
+  .ruma-fila-hover:hover {
+    background-color: var(--color-bg);
+  }
+}
+
+/* Movimiento reducido no es cero movimiento: se quedan opacidad y color,
+   se va todo lo que se desplaza. */
+@media (prefers-reduced-motion: reduce) {
+  .ruma-in, .ruma-medir {
+    animation: ruma-aparecer 200ms ease forwards;
+    animation-delay: 0ms;
+    transform: none;
+  }
+  /* Sin `transform: none`: el marcador se centra con translateX(-50%) y
+     borrarlo lo movía media anchura, señalando un precio que no era. */
+  .ruma-marcador { animation: none; opacity: 1; }
+  /* El chevron giraba igual: es poco movimiento, pero es movimiento. */
+  .ruma-chevron { transition: none; }
+  .ruma-press:active { transform: none; }
+  .ruma-fold { transition: opacity 180ms ease; }
+  @keyframes ruma-aparecer { to { opacity: 1; } }
+}

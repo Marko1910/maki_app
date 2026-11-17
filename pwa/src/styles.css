@@ -152,12 +152,6 @@ a { color: inherit; text-decoration: none; }
 .steps { display: flex; gap: 8px; align-items: center; }
 .steps i { width: 8px; height: 8px; border-radius: 999px; background: rgba(22, 33, 28, 0.18); transition: width 0.2s; }
 .steps i.on { width: 28px; background: var(--accent); }
-.status { display: flex; justify-content: space-between; gap: 4px; }
-.status > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); text-align: center; min-width: 0; }
-.status i { width: 14px; height: 14px; border-radius: 50%; background: var(--hair); }
-.status .done i { background: var(--accent); }
-.status .now { color: var(--accent); font-weight: 800; }
-.status .now i { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-tint); }
 
 /* Test environments say so on every screen */
 .env-tag { position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 3000; padding: 2px 10px calc(2px); padding-top: calc(var(--safe-t) + 2px); border-radius: 0 0 8px 8px; background: #7a4b0a; color: #fff; font-size: 12px; font-weight: 800; white-space: nowrap; pointer-events: none; }
@@ -225,3 +219,134 @@ a { color: inherit; text-decoration: none; }
 .cam .btn-primary { background: linear-gradient(135deg, #0f6e56, #148063); }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
+
+/* Result: payment steps, circles joined by dashed lines (Stitch "pasos de pago arriba") */
+.pay-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.pay-steps li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.pay-steps li + li::before { content: ""; position: absolute; top: 17px; right: calc(50% + 22px); left: calc(-50% + 22px); border-top: 2px dashed var(--hair); }
+.pay-steps li.done + li::before, .pay-steps li.now::before { border-top-color: var(--accent); }
+.pay-dot { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: var(--muted); border: 2px solid var(--hair); background: rgba(255, 255, 255, 0.7); }
+.pay-steps .done .pay-dot { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pay-steps .now .pay-dot { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 5px var(--accent-tint); }
+.pay-label { font-size: 12px; line-height: 1.25; color: var(--muted); }
+.pay-label b { color: var(--ink); }
+.pay-steps .now .pay-label, .pay-steps .now .pay-label b { color: var(--accent); }
+/* Result: detection boxes over the photo */
+/* The frame hugs the image, so box fractions land on the photo and not on letterbox bands. */
+.photo-boxes { position: relative; width: fit-content; max-width: 100%; margin: 0 auto; border-radius: 14px; overflow: hidden; }
+.photo-boxes img { display: block; max-width: 100%; max-height: 52vh; width: auto; height: auto; }
+.det-box { position: absolute; border: 3px solid #2ca97d; border-radius: 10px; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6); }
+.det-box em { position: absolute; top: 6px; left: 6px; font-style: normal; font-size: 12px; font-weight: 800; color: #fff; background: var(--accent); padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.found > * { padding-left: 0; padding-right: 0; }
+
+/* Home: weekly goal ring (Stitch "Verde fluido") */
+.home { background: radial-gradient(circle at 50% 0%, rgba(44, 169, 125, 0.16), transparent 60%); }
+.goal-edit { min-height: 44px; padding: 0 16px; font-size: 14px; }
+.goal-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.goal-days .filter { min-height: 44px; padding: 0; }
+.goal-ring { position: relative; width: min(64vw, 240px); aspect-ratio: 1; }
+.goal-ring svg { width: 100%; height: 100%; }
+.goal-track { fill: none; stroke: var(--accent-tint); stroke-width: 14; }
+.goal-arc { fill: none; stroke: url(#ring); stroke-width: 14; stroke-linecap: round; transition: stroke-dashoffset 0.6s ease; }
+@media (prefers-reduced-motion: reduce) { .goal-arc { transition: none; } }
+.goal-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-align: center; }
+.goal-center .t-hero { font-size: 56px; }
+.pending-dot { width: 8px; height: 8px; border-radius: 50%; background: #d9822b; flex: none; }
+.chip-live { background: rgba(217, 130, 43, 0.14); border-color: transparent; color: #a3540f; }
+.chip-live i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+/* Pickup: calm waiting state and detail (Stitch "Seguimiento — en espera", "Detalle del recojo") */
+.calm { display: flex; gap: 12px; align-items: center; background: rgba(44, 169, 125, 0.12); border-color: rgba(15, 110, 86, 0.22); }
+.calm-check { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; flex: none; }
+.qty-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.qty-table th { font-size: 12px; font-weight: 500; color: var(--muted); text-align: right; padding: 0 0 8px; border-bottom: 1px solid var(--hair); }
+.qty-table td { text-align: right; padding: 12px 0; border-bottom: 1px solid var(--hair); }
+.qty-table th:first-child, .qty-table td:first-child { text-align: left; }
+.qty-table tr:last-child td { border-bottom: 0; }
+/* The rail is a 2px background strip centred under the dots, not a card border. */
+.timeline { list-style: none; margin: 0; padding: 0; background: linear-gradient(var(--accent-tint), var(--accent-tint)) 5px 0 / 2px 100% no-repeat; }
+.timeline li { position: relative; display: flex; justify-content: space-between; gap: 12px; padding: 8px 0 8px 24px; font-variant-numeric: tabular-nums; }
+.timeline li::before { content: ""; position: absolute; left: 0; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: var(--accent); }
+.timeline li:last-child { color: var(--accent); font-weight: 800; }
+
+/* Home: tu ruma, the month's pile as a pre-rendered 3D bale (landing/3d/ruma-fardo-v2.blend, five stages) */
+.ruma-card { display: grid; grid-template-columns: 112px 1fr; gap: 14px; align-items: center; }
+.ruma-art { height: 104px; display: flex; align-items: flex-end; justify-content: center; }
+/* The WebPs already fade the render's shadow catcher at the edges, so Android shows the same file. */
+.ruma-art img { max-width: 100%; max-height: 100%; animation: ruma-in 0.5s ease-out both; }
+@keyframes ruma-in { from { opacity: 0; transform: translateY(6px) scale(0.96); } }
+
+/* Reviews pass (docs/resenas-usuarios-diseno.md): loading skeletons, the credited banner and 48px targets */
+.skel { border-radius: 16px; background: linear-gradient(100deg, rgba(255, 255, 255, 0.42) 30%, rgba(255, 255, 255, 0.82) 50%, rgba(255, 255, 255, 0.42) 70%) 0 0 / 300% 100%; animation: skel 1.4s linear infinite; }
+@keyframes skel { from { background-position: 100% 0; } to { background-position: 0 0; } }
+.credited { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: rgba(44, 169, 125, 0.14); border-color: var(--accent-line); animation: credited-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.credited .calm-check { animation: credited-ring 1.2s ease-out 0.3s 2; }
+@keyframes credited-in { from { opacity: 0; transform: translateY(-8px) scale(0.96); } }
+@keyframes credited-ring { from { box-shadow: 0 0 0 0 rgba(15, 110, 86, 0.45); } to { box-shadow: 0 0 0 14px rgba(15, 110, 86, 0); } }
+@media (prefers-reduced-motion: reduce) { .skel, .credited, .credited .calm-check { animation: none; } }
+.goal-edit, .goal-days .filter { min-height: 48px; }
+
+/* Credited banner is temporary: a thin bar runs out over the 7 s it stays (Home, CREDITED_MS). */
+.credited { position: relative; overflow: hidden; }
+.credited-timer { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: var(--accent); transform-origin: left; animation: credited-timer 7s linear both; }
+@keyframes credited-timer { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .credited-timer { animation: none; opacity: .4; } }
+
+/* Puntos de acopio: the tapped card and its pin stand out (Centers.tsx, RumaMap focus) */
+.center-card { cursor: pointer; transition: box-shadow 0.2s ease, border-color 0.2s ease; }
+.center-card[data-selected="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.center-pick { text-align: left; min-height: 48px; padding: 0; background: none; border: 0; color: inherit; font: inherit; font-weight: 800; }
+.pin-selected { transform: scale(1.3); box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.9), 0 4px 12px rgba(0, 0, 0, 0.25); }
+@media (prefers-reduced-motion: reduce) { .center-card { transition: none; } }
+
+/* Rumi: the assistant's avatar and the chat's greeting */
+.rumi-avatar { flex: none; border-radius: 50%; object-fit: cover; background: #fff; }
+.rumi-hello { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 24px 0 8px; }
+.rumi-turn { display: flex; align-self: flex-start; align-items: flex-end; gap: 8px; max-width: 92%; }
+.rumi-turn .bubble { max-width: none; min-width: 0; }
+
+/* Home: the weekly ring is a 3D render (public/anim/ring-*.webp); the count sits in its middle. */
+.goal-3d { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; animation: goal-3d-in .5s ease-out both; }
+@keyframes goal-3d-in { from { opacity: 0; transform: scale(.94) rotate(-6deg); } }
+@media (prefers-reduced-motion: reduce) { .goal-3d { animation: none; } }
+
+/* ---------- Navegación fluida (docs/navegacion-fluida.md) ---------- */
+/* Screen changes run as a View Transition where the browser has one (lib/flow.ts): a short slide
+   and fade, reversed when going back (html[data-nav="back"]). The tab bar keeps its own name so it
+   stays put between two tabs instead of sliding with the page. */
+::view-transition-old(root) { animation: 200ms ease-in both nav-out; }
+::view-transition-new(root) { animation: 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both nav-in; }
+html[data-nav="back"]::view-transition-old(root) { animation-name: nav-out-back; }
+html[data-nav="back"]::view-transition-new(root) { animation-name: nav-in-back; }
+@keyframes nav-in { from { opacity: 0; transform: translateX(24px); } }
+@keyframes nav-out { to { opacity: 0; transform: translateX(-24px); } }
+@keyframes nav-in-back { from { opacity: 0; transform: translateX(-24px); } }
+@keyframes nav-out-back { to { opacity: 0; transform: translateX(24px); } }
+.tabbar { view-transition-name: tabbar; }
+.env-tag { view-transition-name: env-tag; }
+/* Fallback without the API: the new screen fades in. Opacity only: a transform on <main> would
+   unpin its fixed bottom bar while it runs. */
+@supports not (view-transition-name: none) {
+  .app main { animation: nav-fade 220ms ease-out both; }
+}
+@keyframes nav-fade { from { opacity: 0; } }
+
+/* Small celebrations that never block: the scan's points, the next step, a finished redemption. */
+.hero.pop { animation: pop-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+@keyframes pop-in { from { opacity: 0.6; transform: scale(0.94); } }
+.next-step { animation: credited-in 0.35s ease-out both; }
+.redeem-done { background: rgba(44, 169, 125, 0.14); border-color: var(--accent-line); animation: credited-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  .app main, .hero.pop, .next-step, .redeem-done { animation: none; }
+}
+
+/* Planes (B2): the feature list of a plan card. */
+.plan-features { display: grid; gap: 10px; list-style: none; padding: 0; margin: 0; }
+.plan-features li { display: flex; gap: 10px; align-items: flex-start; }
+
+/* Role choice: the rider's page fades in over the family's (RoleSelect, Register). */
+.role-wash { position: fixed; inset: 0; z-index: -1; background: var(--page); opacity: 0; transition: opacity 450ms ease; pointer-events: none; }
+.role-wash[data-on="true"] { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .role-wash { transition: none; } }

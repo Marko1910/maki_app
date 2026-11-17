@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Field, Icon, Logo, LogoPlate, TopBar } from "../../components/ui";
+import { cleanCode, clearRef, savedRef } from "../../lib/referral";
 import { humanize, pendingAddress, setPendingAddress, signIn, signUp } from "../../lib/api";
 import { here } from "../../lib/util";
 
@@ -89,6 +90,9 @@ export function Onboarding() {
   );
 }
 
+/** The rider's page light, faded in over the family's while Eco-Rider is chosen. */
+const RoleWash = ({ on }: { on: boolean }) => <div className="role-wash" data-role="rider" data-on={on} aria-hidden="true" />;
+
 export function RoleSelect() {
   const nav = useNavigate();
   const [role, setRole] = useState<"generador" | "eco_rider">("generador");
@@ -97,7 +101,8 @@ export function RoleSelect() {
     { id: "eco_rider" as const, icon: "bike", title: "Eco-Rider", text: "Recojo reciclaje y gano dinero" },
   ];
   return (
-    <main className="screen">
+    <main className="screen" data-role={role === "eco_rider" ? "rider" : undefined}>
+      <RoleWash on={role === "eco_rider"} />
       <div className="grow" />
       <LogoPlate plate={96} />
       <div className="center"><h1 className="t-title">Bienvenido a Ruma</h1><p className="muted">Elige tu rol para crear tu cuenta</p></div>
@@ -164,6 +169,7 @@ export function Register() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmEmail, setConfirmEmail] = useState(false);
+  const [refCode, setRefCode] = useState(savedRef);
 
   const locate = async () => {
     const fix = await here();
@@ -174,7 +180,8 @@ export function Register() {
     e.preventDefault();
     setBusy(true); setError(null);
     try {
-      const signedIn = await signUp(email, password, role, name, isRider || !address.trim() ? null : { line: address.trim(), lat: coords.lat, lng: coords.lng });
+      const signedIn = await signUp(email, password, role, name, isRider || !address.trim() ? null : { line: address.trim(), lat: coords.lat, lng: coords.lng }, isRider ? "" : refCode);
+      clearRef();
       if (!signedIn) { setConfirmEmail(true); setBusy(false); }
     } catch (err) { setError(humanize(err)); setBusy(false); }
   };
@@ -189,19 +196,22 @@ export function Register() {
   );
 
   return (
-    <main className="screen">
+    <main className="screen" data-role={isRider ? "rider" : undefined}>
+      <RoleWash on={isRider} />
       <TopBar title="" />
       <div><h1 className="t-title">{isRider ? "Crea tu cuenta de Eco-Rider" : "Crea tu cuenta"}</h1>
         <p className="muted">{isRider ? "Recolecta reciclaje y gana por cada ruta." : "Recicla desde casa y gana Eco-Puntos por cada residuo."}</p></div>
       <form className="stack" style={{ gap: 16 }} onSubmit={(e) => void submit(e)}>
         <div className="glass pad stack" style={{ gap: 16 }}>
-          <Field label="Nombre" required autoComplete="name" placeholder={isRider ? "Carlos Ramos" : "Fam. Nureña"} value={name} onChange={(e) => setName(e.target.value)} />
+          <Field label="Nombre" required autoComplete="name" placeholder={isRider ? "Carlos Ramos" : "Ana Quispe"} value={name} onChange={(e) => setName(e.target.value)} />
           <Field label="Correo" type="email" required autoComplete="email" inputMode="email" placeholder="tucorreo@ejemplo.com" value={email} onChange={(e) => setEmail(e.target.value)} />
           <Field label="Contraseña" required minLength={6} autoComplete="new-password" type={show ? "text" : "password"} placeholder="Mínimo 6 caracteres" value={password} onChange={(e) => setPassword(e.target.value)}
             right={<button type="button" className="ghost-btn" aria-label={show ? "Ocultar contraseña" : "Mostrar contraseña"} onClick={() => setShow(!show)}><Icon name="eye" /></button>} />
           {!isRider && <Field label="Dirección de recojo" required autoComplete="street-address" placeholder="Jr. Las Flores 123, SJL" value={address} onChange={(e) => setAddress(e.target.value)}
             helper={coords.lat != null ? "Ubicación detectada. Es donde el Eco-Rider recogerá tu reciclaje." : "Es donde el Eco-Rider recogerá tu reciclaje. Puedes cambiarla después."}
             right={<button type="button" className="ghost-btn accent" aria-label="Usar mi ubicación" onClick={() => void locate()}><Icon name="locate" /></button>} />}
+          {!isRider && <Field label="Código de invitación (opcional)" autoCapitalize="characters" autoComplete="off" placeholder="6 letras" value={refCode} onChange={(e) => setRefCode(cleanCode(e.target.value))}
+            helper="Si un vecino te invitó, ganan puntos los dos cuando pesen tu primer reciclaje." />}
         </div>
         {error && <p className="danger" role="alert">{error}</p>}
         <button className="btn btn-primary" disabled={busy}>{busy ? "Creando cuenta…" : "Crear cuenta"}</button>

@@ -43,7 +43,7 @@ como NotImplemented basándose solo en documentación antigua.**
 | `RiderViewModel.selectStop` | Borra `navRoad`, pero no `navFrom`/`navPickupId`: volver al mismo destino cerca del último origen puede dejar la pantalla sin ruta hasta moverse. |
 | `RiderViewModel.onNavPosition` | Respuestas simultáneas del mismo pickup solo comprueban su id; una respuesta vieja puede sustituir a una nueva. No hay cancelación ni número de generación. |
 | `RiderNavigationScreen` | Sin geometría dibuja una recta entre rider y destino. Esa recta no demuestra una calle transitable. Sin GPS o destino no se obtiene una ruta útil. |
-| `MakiLocation` | Reduce Location a lat/lng: se pierden precisión, velocidad, rumbo y tiempo para decidir si la posición sirve para navegar. Puede reutilizar un fix de hasta 20 s. |
+| `RumaLocation` | Reduce Location a lat/lng: se pierden precisión, velocidad, rumbo y tiempo para decidir si la posición sirve para navegar. Puede reutilizar un fix de hasta 20 s. |
 | `OsmMap` | Reconstruye overlays y reencuadra toda la ruta cuando cambian marcadores/trazado. Puede deshacer el zoom/paneo del rider; no hay modo seguimiento/progreso. |
 | `streetTrip` Android | Con una parada en curso usa esa parada como origen para las restantes. La geometría/tiempo resultante omite el tramo rider→parada en curso; con solo esa parada, retorna sin calcular calles. |
 | `RoutePlanner` | Vecino más cercano + 2-opt sobre Haversine: es heurística geométrica, no optimización del tiempo por calles. Sus comentarios «efectivamente óptimo» y «correcto para ordenar» son demasiado fuertes. |

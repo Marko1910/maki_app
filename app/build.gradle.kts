@@ -4,8 +4,12 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// Firebase config: the plugin reads app/google-services.json (docs/push-setup.md). Until the owner
+// adds that file the plugin stays off, the build passes and push is a no-op (RumaPush.available).
+if (file("google-services.json").exists()) apply(plugin = libs.plugins.google.services.get().pluginId)
+
 android {
-    namespace = "com.example.maki"
+    namespace = "pe.ruma.app"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -13,7 +17,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.maki"
+        applicationId = "pe.ruma.app"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
@@ -45,6 +49,9 @@ android {
 }
 
 dependencies {
+    // Push with the app closed (data/RumaPush.kt). The Firebase project values come from the google-services plugin above.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

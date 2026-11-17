@@ -41,6 +41,15 @@ export const soles = (n: number | null | undefined) => `S/${(n ?? 0).toFixed(2)}
 export const int = (n: number | null | undefined) => Math.round(n ?? 0).toLocaleString("en-US");
 export const POINTS_PER_SOL = 1000;
 export const ptsToSoles = (p: number) => soles(p / POINTS_PER_SOL);
+/** Points that reached the balance since this phone last showed it. 0 on the first read and after a redemption. */
+export function takeBalanceGain(userId: string | null, balance: number) {
+  const key = `ruma.balance.${userId ?? "anon"}`;
+  try {
+    const last = localStorage.getItem(key);
+    localStorage.setItem(key, String(balance));
+    return last == null ? 0 : Math.max(0, balance - Number(last));
+  } catch { return 0; }
+}
 export const kg = (n: number | null | undefined) => `${(n ?? 0).toLocaleString("en-US", { maximumFractionDigits: 1 })} kg`;
 
 export function ago(iso?: string | null) {
@@ -64,6 +73,14 @@ export function dayGroup(iso?: string | null) {
   if (sameDay(d, new Date(now.getTime() - 864e5))) return "AYER";
   return d.toLocaleDateString("es-PE", { day: "numeric", month: "long" }).toUpperCase();
 }
+/** The label was written as "Hoy …" on the day it was asked; re-read the day from scheduled_date. */
+export function windowText(p: Row) {
+  const time = String(p.window_label ?? "").replace(/^(Hoy|Ma[ñn]ana)\s*/i, "");
+  if (!p.scheduled_date) return p.window_label ?? "";
+  const d = new Date(`${p.scheduled_date}T12:00:00`), now = new Date();
+  const day = sameDay(d, now) ? "Hoy" : sameDay(d, new Date(now.getTime() + 864e5)) ? "Mañana" : d.toLocaleDateString("es-PE", { weekday: "short", day: "numeric", month: "short" });
+  return `${day} ${time}`.trim();
+}
 export const isoDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 export const initials = (name?: string | null) =>
@@ -82,13 +99,14 @@ export const VEHICLE: Record<string, string> = { moto: "Moto", bici: "Bici", bic
 
 export type LatLng = { lat: number; lng: number };
 
-export const here = (maxAgeMs = 30000) =>
+/** A fix no older than [maxAgeMs]. `precise = false` accepts the network's rougher answer (indoors, at night). */
+export const here = (maxAgeMs = 30000, precise = true) =>
   new Promise<LatLng | null>((resolve) => {
     if (!("geolocation" in navigator)) return resolve(null);
     navigator.geolocation.getCurrentPosition(
       (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
       () => resolve(null),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: maxAgeMs },
+      { enableHighAccuracy: precise, timeout: 10000, maximumAge: maxAgeMs },
     );
   });
 
@@ -103,6 +121,18 @@ export const pickupLatLng = (p: Row): LatLng | null => {
   const lat = p.latitude ?? p.address?.latitude, lng = p.longitude ?? p.address?.longitude;
   return lat != null && lng != null ? { lat, lng } : null;
 };
+
+/**
+ * The address line the rider reads. A pickup asked with the phone's GPS can be far from
+ * the recolector's registered address (Cartavio vs. Av. Larco, 30 km): farther than
+ * 300 m, the pin is the truth and the street line would send the rider to the wrong town.
+ */
+export function stopAddress(p: Row) {
+  const line = p.address?.address_line || "Sin dirección";
+  const pin = p.latitude != null && p.longitude != null ? { lat: p.latitude, lng: p.longitude } : null;
+  const home = p.address?.latitude != null && p.address?.longitude != null ? { lat: p.address.latitude, lng: p.address.longitude } : null;
+  return pin && home && distanceKm(pin, home) > 0.3 ? "Ubicación GPS del recolector" : line;
+}
 
 /** Keeps the screen on where it matters; on iOS, a sleeping PWA stops reporting location. */
 export function useWakeLock(active: boolean) {

@@ -1,0 +1,4 @@
+scripts/__pycache__/
+verificacion/*.xlsx
+verificacion/*.png
+~$*.xlsx

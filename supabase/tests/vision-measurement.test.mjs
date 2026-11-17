@@ -31,7 +31,7 @@ test('migration, atomic provenance, immutable completion samples, coverage and p
       create table public.pickups(id uuid primary key, detection_id uuid, generator_id uuid, status text);
       create table public.pickup_items(pickup_id uuid, material_id uuid, reported_quantity integer, confirmed_quantity integer,
         primary key(pickup_id,material_id));
-      insert into auth.users values ('${id(1)}','family@maki.test'), ('${id(2)}','family@example.org');
+      insert into auth.users values ('${id(1)}','family@ruma.test'), ('${id(2)}','family@example.org');
       insert into materials values ('${id(10)}','PET','Plástico'),('${id(11)}','ALU','Aluminio'),('${id(12)}','VID','Vidrio');
       ${oldFunction}
     `);

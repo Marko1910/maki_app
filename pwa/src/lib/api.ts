@@ -1,4 +1,4 @@
-// The PWA's twin of data/MakiRepository.kt: every table, RPC and function name lives here.
+// The PWA's twin of data/RumaRepository.kt: every table, RPC and function name lives here.
 // The client asks and the database decides: triggers and RPCs own points and money.
 import { createClient } from "@supabase/supabase-js";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
@@ -66,10 +66,11 @@ export async function signIn(email: string, password: string) {
 }
 
 /** True when signed straight in; false when the email needs confirming. */
-export async function signUp(email: string, password: string, role: string, name: string, address: PendingAddress | null) {
+export async function signUp(email: string, password: string, role: string, name: string, address: PendingAddress | null, referralCode = "") {
   const { data, error } = await sb.auth.signUp({
     email: email.trim(), password,
-    options: { data: { role, full_name: name.trim(), display_name: name.trim() } },
+    // referral_code is read by handle_new_user, which attaches it only for the generador role.
+    options: { data: { role, full_name: name.trim(), display_name: name.trim(), ...(role === "generador" && referralCode ? { referral_code: referralCode } : {}) } },
   });
   if (error) throw error;
   // With email confirmation on, GoTrue answers a repeated email with success and no identities, and sends nothing.
@@ -81,7 +82,19 @@ export async function signUp(email: string, password: string, role: string, name
   return true;
 }
 
-export const signOut = () => sb.auth.signOut();
+export async function signOut() {
+  // First stop this account's push on this device: the RPC needs the session that is about to end.
+  // The browser keeps its subscription, so the next account to sign in here registers it again (usePush).
+  try {
+    const sub = await (await navigator.serviceWorker?.getRegistration())?.pushManager?.getSubscription();
+    if (sub) await sb.rpc("unregister_push_token", { p_token: sub.endpoint });
+  } catch { /* signing out matters more than the token */ }
+  return sb.auth.signOut();
+}
+
+/** This device receives the signed-in account's notices (push_tokens, written only through the RPC). */
+export const registerPushToken = (endpoint: string, p256dh: string, auth: string) =>
+  q(sb.rpc("register_push_token", { p_token: endpoint, p_platform: "web", p_p256dh: p256dh, p_auth: auth }));
 
 export async function loadMyRole(): Promise<string | null> {
   const r = await q(sb.from("profiles").select("role").eq("id", await need()));
@@ -120,8 +133,8 @@ export async function savePrimaryAddress(addressId: string | null, line: string,
 
 /* ---------- Wallet ---------- */
 
-export const loadRedemptionOptions = () => q(sb.from("redemption_options").select("id,code,name,kind,description,points_per_unit,min_points,unit_value,icon,color,sort_order,partner").eq("is_active", true).order("sort_order"));
-export const loadRedemptions = async () => q(sb.from("redemptions").select("kind,points_spent,monetary_value,status,created_at,redemption_options(name,icon)").eq("user_id", await need()).order("created_at", { ascending: false }));
+export const loadRedemptionOptions = () => q(sb.from("redemption_options").select("id,code,name,kind,description,points_per_unit,min_points,unit_value,icon,color,sort_order,partner,metadata").eq("is_active", true).order("sort_order"));
+export const loadRedemptions = async () => q(sb.from("redemptions").select("kind,points_spent,monetary_value,quantity,status,created_at,redemption_options(name,icon,code)").eq("user_id", await need()).order("created_at", { ascending: false }));
 /** DB triggers validate the balance and post the ledger. */
 export const createRedemption = async (optionId: string | null, kind: string, pointsSpent: number, monetaryValue: number) =>
   q(sb.from("redemptions").insert({ user_id: await need(), option_id: optionId, kind, points_spent: pointsSpent, monetary_value: monetaryValue }));
@@ -147,14 +160,42 @@ export const loadCenters = () => q(sb.from("collection_centers").select("id,name
 
 /* ---------- Notifications ---------- */
 
+/* ---------- Referrals: the database attributes, caps and pays (supabase/sql/2026-11-12_referidos.sql) ---------- */
+
+type ReferralInvite = { name?: string | null; status: string; reason?: string | null; points?: number | null; created_at?: string; decided_at?: string | null };
+export type ReferralSummary = {
+  code: string; referrer_points: number; referred_points: number; min_kg: number; monthly_cap: number; attach_days: number;
+  paid_this_month: number; earned_points: number; can_apply: boolean; invited_by: ReferralInvite | null; invites: ReferralInvite[];
+};
+export const loadReferralSummary = () => q<ReferralSummary>(sb.rpc("my_referral_summary"));
+export const applyReferralCode = (code: string) => q(sb.rpc("apply_referral_code", { p_code: code }));
+
+/* ---------- Plans: the database prices, grants and expires (supabase/sql/2026-11-12_planes.sql) ---------- */
+
+export type PlanFeature = { title: string; detail?: string; status: "activo" | "pronto" };
+export type PlanRow = { code: string; name: string; tagline?: string | null; price_month: number; price_year: number | null; trial_days: number; features: PlanFeature[] };
+export type MyPlan = {
+  active: { id: string; plan_code: string; name: string; period: string; ends_at: string; cancelled_at: string | null } | null;
+  active_until: string | null;
+  pending: { id: string; plan_code: string; name: string; period: string; amount: number; reference: string } | null;
+  trial_available: boolean;
+  tickets: { base: number; bonus: number; total: number } | null;
+  payment: { yape_number: string | null; yape_holder: string | null; yape_qr_url: string | null; instructions: string | null; business_contact: string | null } | null;
+};
+export const loadPlans = () => q<PlanRow[]>(sb.from("plans").select("code,name,tagline,price_month,price_year,trial_days,features").eq("audience", "hogar").order("sort_order"));
+export const loadMyPlan = () => q<MyPlan>(sb.rpc("my_plan"));
+export const requestPlan = (plan: string, period: "month" | "year") => q(sb.rpc("request_plan", { p_plan: plan, p_period: period }));
+export const startPlanTrial = (plan: string) => q(sb.rpc("start_plan_trial", { p_plan: plan }));
+export const cancelMyPlan = (id: string) => q<string>(sb.rpc("cancel_my_plan", { p_subscription_id: id }));
+
 export const loadNotifications = async () => q(sb.from("notifications").select("id,kind,title,body,is_read,created_at,reference_type").eq("user_id", await need()).order("created_at", { ascending: false }));
 export const markAllNotificationsRead = async () => q(sb.from("notifications").update({ is_read: true }).eq("user_id", await need()).eq("is_read", false));
 export const markNotificationRead = async (id: number) => q(sb.from("notifications").update({ is_read: true }).eq("id", id).eq("user_id", await need()));
 
 /* ---------- Pickups: family ---------- */
 
-const ITEMS = "pickup_items(reported_quantity,confirmed_quantity,points,materials(id,name,code,icon))";
-const PICKUP = `id,code,status,scheduled_date,window_label,eta_minutes,generator_points_awarded,rider_id,created_at,completed_at,latitude,longitude,distance_m,${ITEMS},rider:profiles!pickups_rider_id_fkey(display_name,phone),address:addresses!pickups_address_id_fkey(address_line,latitude,longitude)`;
+const ITEMS = "pickup_items(reported_quantity,confirmed_quantity,condition,points,materials(id,name,code,icon))";
+const PICKUP = `id,code,status,scheduled_date,window_label,eta_minutes,generator_points_awarded,generator_points_final,points_status,cancel_reason,rider_id,created_at,requested_at,assigned_at,started_at,arrived_at,completed_at,cancelled_at,latitude,longitude,distance_m,${ITEMS},rider:profiles!pickups_rider_id_fkey(display_name,phone),address:addresses!pickups_address_id_fkey(address_line,latitude,longitude)`;
 export const ACTIVE = ["requested", "assigned", "en_route", "arriving", "collecting"];
 
 /** The one still in flight, else the newest: "latest" alone hid a pickup on its way. */
@@ -166,9 +207,12 @@ export async function loadTrackedPickup(pickupId?: string | null) {
   return (await q(sb.from("pickups").select(PICKUP).eq("generator_id", id).order("created_at", { ascending: false }).limit(1)))[0] ?? null;
 }
 export const loadPickups = async (limit = 20) => q(sb.from("pickups").select(PICKUP).eq("generator_id", await need()).order("created_at", { ascending: false }).limit(limit));
-export const cancelPickup = (id: string) => q(sb.from("pickups").update({ status: "cancelled", cancel_reason: "Cancelado por la familia" }).eq("id", id));
+export const cancelPickup = (id: string) => q(sb.from("pickups").update({ status: "cancelled", cancel_reason: "Cancelado por el recolector" }).eq("id", id));
 export const loadRiderProfile = async (riderId: string) => (await q(sb.from("rider_profiles").select(RIDER_PROFILE).eq("profile_id", riderId)))[0] ?? null;
 export const loadRiderPosition = async (riderId: string) => (await q(sb.from("rider_profiles").select("current_latitude,current_longitude,last_location_at").eq("profile_id", riderId)))[0] ?? null;
+/** When each saved scan happened, for the weekly goal on the home screen. */
+export const loadScanDates = async (since: Date) =>
+  (await q(sb.from("detections").select("detected_at").eq("generator_id", await need()).gte("detected_at", since.toISOString()))).map((r: Row) => new Date(r.detected_at));
 export const loadDetections = async (limit = 20) => q(sb.from("detections").select("status,total_points,total_value,total_weight_kg,detected_at,detection_items(quantity,confidence,quality_score,points,materials(id,name,code,icon))").eq("generator_id", await need()).order("detected_at", { ascending: false }).limit(limit));
 
 export type At = { lat: number; lng: number } | null;
@@ -213,7 +257,7 @@ export const previewFrame = (sessionId: string, frame: string, motion: Motion, g
 export const commitScan = (sessionId: string, observations: Observation[]) =>
   callFunction("detect-material", { session_id: sessionId, mode: "commit", observations });
 export async function askAssistant(messages: { role: string; content: string }[]) {
-  const r = await callFunction("maki-assistant", { messages });
+  const r = await callFunction("ruma-assistant", { messages });
   if (!r.reply) throw new Error("El asistente no respondió.");
   return r.reply as string;
 }
@@ -247,8 +291,8 @@ export async function acceptPickup(pickupId: string) {
 }
 export const setPickupStatus = (id: string, status: string) => q(sb.from("pickups").update({ status }).eq("id", id));
 export const releasePickup = (id: string) => q(sb.rpc("release_pickup", { p_pickup_id: id }));
-export const confirmQuantities = async (id: string, items: [string, number][]) => {
-  for (const [m, n] of items) await q(sb.from("pickup_items").update({ confirmed_quantity: n }).eq("pickup_id", id).eq("material_id", m));
+export const confirmQuantities = async (id: string, items: [string, number][], conditions: Record<string, string> = {}) => {
+  for (const [m, n] of items) await q(sb.from("pickup_items").update({ confirmed_quantity: n, condition: conditions[m] ?? "limpia" }).eq("pickup_id", id).eq("material_id", m));
 };
 export const completePickup = (id: string) => q(sb.rpc("complete_pickup", { p_pickup_id: id }));
 

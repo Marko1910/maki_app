@@ -1,0 +1,4 @@
+[     268ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ http://localhost:4317/login:0
+[    2949ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ http://localhost:4317/f/seguimiento?id=98ac34fd-0dcb-4aa6-8445-2c99b1af0e65:0
+[    4497ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ http://localhost:4317/f/seguimiento?id=d092566f-ae79-40bc-b15c-b57dd4b06eeb:0
+[    5474ms] [WARNING] <meta name="apple-mobile-web-app-capable" content="yes"> is deprecated. Please include <meta name="mobile-web-app-capable" content="yes"> @ http://localhost:4317/f/historial:0

@@ -33,12 +33,15 @@ export default defineConfig(({ mode, command }) => {
           icons: [
             { src: "icon-192.png", sizes: "192x192", type: "image/png" },
             { src: "icon-512.png", sizes: "512x512", type: "image/png" },
-            { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+            // Full bleed with the logo inside the safe zone, so Android can crop it to any shape.
+            { src: "icon-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
           ],
         },
         workbox: {
           globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
           navigateFallback: "/index.html",
+          // Web Push handlers (push, notificationclick) live in public/push-sw.js.
+          importScripts: ["push-sw.js"],
         },
       }),
     ],

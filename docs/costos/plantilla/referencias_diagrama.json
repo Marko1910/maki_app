@@ -1,0 +1,276 @@
+{
+  "salida": "Ruma_costos_diagrama_profesora.xlsx",
+  "referencias": {
+    "physical_md": "'1. Parte física'!F13",
+    "physical_mod": "'1. Parte física'!F18",
+    "physical_prime": "'1. Parte física'!F19",
+    "physical_cif": "'1. Parte física'!F35",
+    "physical_total": "'1. Parte física'!F37",
+    "software_md": "'2. Parte software'!F10",
+    "software_mod": "'2. Parte software'!F14",
+    "software_prime": "'2. Parte software'!F15",
+    "software_cif": "'2. Parte software'!F45",
+    "software_total": "'2. Parte software'!F47",
+    "production_physical": "'3. Gastos y precio'!F12",
+    "production_software": "'3. Gastos y precio'!F13",
+    "production": "'3. Gastos y precio'!F14",
+    "admin": "'3. Gastos y precio'!F19",
+    "sales": "'3. Gastos y precio'!F25",
+    "finance": "'3. Gastos y precio'!F31",
+    "total": "'3. Gastos y precio'!F33",
+    "profit": "'3. Gastos y precio'!F36",
+    "net_sales": "'3. Gastos y precio'!F37",
+    "tax": "'3. Gastos y precio'!F40",
+    "price": "'3. Gastos y precio'!F42",
+    "source_total": "'3. Gastos y precio'!F51",
+    "reconcile": "'3. Gastos y precio'!F52",
+    "sumcheck": "'3. Gastos y precio'!F53"
+  },
+  "origen": [
+    {
+      "hoja": "1. Parte física",
+      "fila": 12,
+      "origen": "Costos variables!D16"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 16,
+      "origen": "Costos variables!D17"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 17,
+      "origen": "Mano de obra!H23"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 22,
+      "origen": "Mano de obra!H20"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 23,
+      "origen": "Indirectos y gastos!D7"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 24,
+      "origen": "Indirectos y gastos!D8"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 25,
+      "origen": "Indirectos y gastos!D9"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 26,
+      "origen": "Indirectos y gastos!D10"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 27,
+      "origen": "Indirectos y gastos!D11"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 28,
+      "origen": "Indirectos y gastos!D12"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 29,
+      "origen": "Indirectos y gastos!D14"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 30,
+      "origen": "Indirectos y gastos!D15"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 31,
+      "origen": "Indirectos y gastos!D16"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 32,
+      "origen": "Indirectos y gastos!D18"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 33,
+      "origen": "Indirectos y gastos!D19"
+    },
+    {
+      "hoja": "1. Parte física",
+      "fila": 34,
+      "origen": "Indirectos y gastos!D20"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 13,
+      "origen": "Mano de obra!H19"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 18,
+      "origen": "Mano de obra!H21"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 19,
+      "origen": "Infraestructura!I7"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 20,
+      "origen": "Infraestructura!I8"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 21,
+      "origen": "Infraestructura!I9"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 22,
+      "origen": "Infraestructura!I10"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 23,
+      "origen": "Infraestructura!I11"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 24,
+      "origen": "Infraestructura!I12"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 25,
+      "origen": "Infraestructura!I14"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 26,
+      "origen": "Infraestructura!I16"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 27,
+      "origen": "Infraestructura!I17"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 28,
+      "origen": "Infraestructura!I18"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 29,
+      "origen": "Infraestructura!I20"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 30,
+      "origen": "Infraestructura!I21"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 31,
+      "origen": "Infraestructura!I22"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 32,
+      "origen": "Infraestructura!I24"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 33,
+      "origen": "Infraestructura!I25"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 34,
+      "origen": "Infraestructura!I27"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 35,
+      "origen": "Infraestructura!I28"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 36,
+      "origen": "Infraestructura!I29"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 37,
+      "origen": "Infraestructura!I30"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 38,
+      "origen": "Costos variables!J7"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 39,
+      "origen": "Costos variables!J8"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 40,
+      "origen": "Costos variables!J9"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 41,
+      "origen": "Costos variables!J10"
+    },
+    {
+      "hoja": "2. Parte software",
+      "fila": 42,
+      "origen": "Costos variables!J11"
+    },
+    {
+      "hoja": "3. Gastos y precio",
+      "fila": 17,
+      "origen": "Mano de obra!H18"
+    },
+    {
+      "hoja": "3. Gastos y precio",
+      "fila": 18,
+      "origen": "Indirectos y gastos!J22"
+    },
+    {
+      "hoja": "3. Gastos y precio",
+      "fila": 22,
+      "origen": "Mano de obra!H22"
+    },
+    {
+      "hoja": "3. Gastos y precio",
+      "fila": 23,
+      "origen": "Indirectos y gastos!J25"
+    },
+    {
+      "hoja": "3. Gastos y precio",
+      "fila": 24,
+      "origen": "Indirectos y gastos!J26"
+    },
+    {
+      "hoja": "3. Gastos y precio",
+      "fila": 28,
+      "origen": "Indirectos y gastos!J23"
+    },
+    {
+      "hoja": "3. Gastos y precio",
+      "fila": 29,
+      "origen": "Costos variables!J18"
+    }
+  ]
+}

@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { BRANDS } from "./brands.ts";
 
-// MAKI server-authoritative recyclable verifier — continuous scan.
+// Ruma server-authoritative recyclable verifier — continuous scan.
 // The camera stays open while the user walks around their waste. Each frame is a
 // `preview`: the server scores it, returns the items it saw and SIGNS that count.
 // `commit` replays those signed observations and writes the one detection — so the
@@ -171,6 +171,14 @@ function clamp01(n: number): number {
 }
 
 /** [x0,y0,x1,y1] in 0..1 image fractions, or null when the model omitted/garbled it. */
+/** Gemini's native detection order: [ymin, xmin, ymax, xmax] on a 0..1000 grid. Asking for x first got the
+ * box transposed on a lying bottle (a vertical strip down the middle instead of the bottle). */
+function normBox2d(raw: unknown): number[] | null {
+  if (!Array.isArray(raw) || raw.length < 4) return null;
+  const [y0, x0, y1, x1] = raw.slice(0, 4).map(Number);
+  return normBox([x0 / 1000, y0 / 1000, x1 / 1000, y1 / 1000]);
+}
+
 function normBox(raw: unknown): number[] | null {
   if (!Array.isArray(raw) || raw.length < 4) return null;
   const values = raw.slice(0, 4).map(Number);
@@ -283,7 +291,7 @@ function canonical(userId: string, sessionId: string, iat: number, items: Counte
 }
 
 // Bump when the prompt, catalog or counting rules change; model aliases can drift too.
-const PIPELINE_VERSION = "ruma-photo-2026-11-03-v1";
+const PIPELINE_VERSION = "ruma-photo-2026-11-06-v2"; // box_2d [ymin,xmin,ymax,xmax], whole container
 type Provenance = { provider: string; model: string; pipeline: string; resolved_model?: string };
 
 function tokenParts(token: unknown): { iat: number; mac: string; metadata: string; source: Provenance | null } | null {
@@ -502,7 +510,7 @@ const BRAND_GUIDE = BRANDS.filter((b) => b.look)
   .join("\n");
 
 const PROMPT = `Eres el verificador de reciclaje de MAKI. Analiza la imagen real de residuos.
-Responde SOLO JSON: {"items":[{"code":<uno de PET,ALU,VID,CAR,PIL>,"quantity":entero>=1,"confidence":0..1,"quality":0..1,"tapa":texto,"liquido":texto,"etiqueta":texto,"texto":texto,"brand":texto|null,"box":[x0,y0,x1,y1]}],"spoof":{"screen":booleano,"reason":texto}}.
+Responde SOLO JSON: {"items":[{"code":<uno de PET,ALU,VID,CAR,PIL>,"quantity":entero>=1,"confidence":0..1,"quality":0..1,"tapa":texto,"liquido":texto,"etiqueta":texto,"texto":texto,"brand":texto|null,"box_2d":[ymin,xmin,ymax,xmax]}],"spoof":{"screen":booleano,"reason":texto}}.
 Reglas: incluye solo materiales reciclables visibles con esos codigos (PET=botella plastica, ALU=lata, VID=vidrio, CAR=carton, PIL=pilas); ignora lo demas.
 Cuenta SOLO los residuos que la persona muestra en primer plano (sobre la mesa, el piso o en la mano, cerca de la camara). NO cuentes objetos del fondo (estantes, muebles, otra habitacion), ni lo que esta dentro de bolsas, ni objetos cortados en el borde que no se distinguen.
 quantity = cuantas unidades de ese material (y esa marca) se ven en ESTA imagen. Cuenta cada objeto una sola vez.
@@ -512,7 +520,7 @@ Como decidir la marca: (1) si lees el nombre en la etiqueta, usa ese nombre escr
 Mira cada envase por separado, de izquierda a derecha, y llena sus campos EN ESTE ORDEN, de lo que ves a lo que concluyes: tapa = color de la tapa (una palabra). liquido = color del contenido (una palabra). etiqueta = colores de la etiqueta y si se ve entera, tapada o de espaldas (hasta 4 palabras). texto = hasta 5 palabras o pedazos de palabra que SI alcanzas a leer en la etiqueta de ESE envase, copiados tal cual aunque esten cortados; "" si no lees nada. Nunca lo completes ni lo inventes: si solo ves una letra, escribe esa letra. Una marca sin su texto leido se descarta. brand va al final: compara lo anterior con el CATALOGO y sus diferencias; si la tapa o los colores contradicen la descripcion de una marca, no es esa marca.
 CATALOGO de marcas que se venden en Peru (nombre: como se ve):
 ${BRAND_GUIDE}
-box = recuadro que encierra ese material, en fracciones 0..1 del ancho y alto de la imagen: x0,y0 = esquina superior izquierda; x1,y1 = esquina inferior derecha. Si hay varias unidades del mismo material, encierra el grupo completo.
+box_2d = recuadro de ESA unidad en escala 0..1000 de la imagen, en el orden [ymin, xmin, ymax, xmax] (primero lo vertical). Encierra el envase COMPLETO: desde la punta de la tapa hasta la base, de borde a borde; nunca solo la tapa ni solo la etiqueta. Si hay varias unidades iguales, encierra el grupo completo.
 Si la imagen parece una foto de una PANTALLA, una foto de otra foto, o una imagen impresa (no un objeto fisico real frente a la camara), pon spoof.screen=true y items=[].
 Se breve: el campo reason con menos de 10 palabras. Escribe el JSON compacto en una sola linea, sin saltos ni sangria.`;
 
@@ -766,7 +774,7 @@ Deno.serve(async (req: Request) => {
       const conf = clamp01(Number(it.confidence));
       const qual = clamp01(Number(it.quality ?? 1));
       const brand = evidencedBrand(it.brand, it.texto);
-      const box = normBox(it.box);
+      const box = Array.isArray(it.box_2d) ? normBox2d(it.box_2d) : normBox(it.box);
       // Una entrada por material y marca: tres Coca-Cola y una Inca Kola son el
       // mismo PET para los puntos, pero dos lineas distintas para la analitica.
       const key = `${m.code}|${brand ?? ""}`;

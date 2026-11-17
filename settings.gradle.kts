@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MAKI"
+rootProject.name = "Ruma"
 include(":app")

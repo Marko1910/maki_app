@@ -4,20 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-MAKI: a native Android app (Kotlin + Jetpack Compose, package `com.example.maki`) plus a Supabase
+Ruma: a native Android app (Kotlin + Jetpack Compose, package `pe.ruma.app`) plus a Supabase
 backend, for household recycling in Peru. Two actors share one codebase:
 
 - **generador** ("Eco-Hero") — scans waste with the camera, earns points, redeems them for cash.
-- **eco_rider** — collects the waste on a route, confirms it, and gets paid per pickup.
+- **eco_rider** — collects the waste on a route, confirms it, and gets paid per kg weighed plus a base per full route.
 
 Built for a hackathon (team DeepCoders); the pitch script and slide assets live in `presentacion/`.
 All user-facing copy is Spanish; code and KDoc are English.
 
-**The product is called Ruma to users** — app label, UI copy, notifications, the
-assistant's name, the panel's title. The code keeps the MAKI names on purpose: the
-package `com.example.maki`, every `Maki*` identifier, `MAKITheme`, `Theme.MAKI`, the
-`*@maki.test` accounts and the `maki-assistant` function slug. Don't rename those; a
-new user-facing string says Ruma.
+**The product is called Ruma** — app label, UI copy, notifications, the panel's title, and also the code:
+package and `applicationId` `pe.ruma.app`, every `Ruma*` identifier (`RumaTheme`, `Theme.Ruma`, `RumaApi`,
+`RumaRepository`…), the `*@ruma.test` test accounts and the `ruma-assistant` function slug. The chat assistant
+alone is called **Rumi**. The only MAKI left is external: the Supabase project names `MAKI_APP_STAGING` /
+`MAKI_APP_PRODUCTION`, the repo folder (to be renamed by the owner), the `Maki12345!` test password and the
+dated history in `supabase/sql/`. A new name says Ruma. The old `maki-assistant` Edge Function is still deployed in
+STAGING for the phone's old APK; delete it once nothing calls it.
 
 ## Commands
 
@@ -28,7 +30,7 @@ Run from the repo root. PowerShell uses `.\gradlew.bat`; the Bash tool uses `./g
 .\gradlew.bat :app:assembleDebug             # build the APK
 .\gradlew.bat :app:installDebug              # push to the connected device
 .\gradlew.bat :app:testDebugUnitTest         # JVM unit tests
-.\gradlew.bat :app:testDebugUnitTest --tests "com.example.maki.RoutePlannerTest"
+.\gradlew.bat :app:testDebugUnitTest --tests "pe.ruma.app.RoutePlannerTest"
 .\gradlew.bat :app:testDebugUnitTest --tests "*untangles*"     # a single test method
 .\gradlew.bat :app:connectedDebugAndroidTest # instrumented tests (needs a device/emulator)
 .\gradlew.bat :app:lintDebug
@@ -38,7 +40,7 @@ Edge Functions (Supabase CLI, run against a project ref — see below):
 
 ```powershell
 supabase functions deploy detect-material --project-ref mbbdrmicjobydprvbpsj
-supabase functions deploy maki-assistant  --project-ref mbbdrmicjobydprvbpsj
+supabase functions deploy ruma-assistant  --project-ref mbbdrmicjobydprvbpsj
 ```
 
 The Gradle daemon toolchain is pinned to **JDK 21** (`gradle/gradle-daemon-jvm.properties`); the app
@@ -67,20 +69,20 @@ header when you replay it.
 ### Client layers
 
 - **`data/`** — a hand-rolled Supabase client over PostgREST + GoTrue; there is no supabase-kt SDK.
-  - `MakiApi` — object holding one in-memory `Session`, OkHttp with long read timeouts (the Edge
+  - `RumaApi` — object holding one in-memory `Session`, OkHttp with long read timeouts (the Edge
     Functions hold the request while a model runs). Exposes `getRaw` / `post` / `patch` /
     `callFunction`, plus `humanize()` which turns Postgres/Edge errors into Spanish the user can act on.
   - `Dtos.kt` — every `@Serializable` row and RPC body.
-  - `MakiRepository` — object where **every PostgREST path and RPC name lives**. Screens and
+  - `RumaRepository` — object where **every PostgREST path and RPC name lives**. Screens and
     ViewModels never build a URL; add the DTO here and the call here.
-  - `MakiPrefs` — SharedPreferences: session tokens, `onboardingSeen`, the address captured during
+  - `RumaPrefs` — SharedPreferences: session tokens, `onboardingSeen`, the address captured during
     onboarding before an account exists, and a cached profile JSON for instant first paint.
 - **`ui/screens/<role>/<Role>ViewModel.kt`** — one ViewModel per role graph. State is Compose
   `mutableStateOf` properties with `private set` (not StateFlow), one per section, each with an
   idempotent `loadX()`. `load { }` swallows errors into `error`; `runAction { }` drives `busy` plus a
   one-shot `message` the Root consumes as a snackbar. The exception is `ui/screens/market/`
   (Mercado Vivo: prices, demand, news) — one `MarketViewModel` both Roots instantiate rather than a
-  copy per role. Shared helpers (`MakiTime`, `POINTS_PER_SOL`, `groupInt`) live at the bottom of
+  copy per role. Shared helpers (`RumaTime`, `POINTS_PER_SOL`, `groupInt`) live at the bottom of
   `GeneratorViewModel.kt` and are imported from there.
 - **Background work** is WorkManager in `data/`: `EcoTipsWorker` (daily eco notification, enqueued
   in `MainActivity`) and `RiderShiftWorker` (turns the rider available at their booked shift hour).
@@ -123,7 +125,7 @@ header when you replay it.
   `{"mode":"health"}` (operators only) pings every provider and lists the models each key can
   reach — use it to replace a retired model. Check provider health with
   `select * from vision_provider_status`.
-- **`maki-assistant`** — chat agent grounded in Peru's container rules plus the caller's real context
+- **`ruma-assistant`** — chat agent grounded in Peru's container rules plus the caller's real context
   (points, recent detections, live `v_material_prices`). Gemini primary, Groq fallback — a chat turn
   can afford the latency.
 - Model keys exist **only** as Edge Function secrets (`GROQ_API_KEY` or `grok_api_camera`,
@@ -147,16 +149,33 @@ not independent model accuracy. Bump `PIPELINE_VERSION` when prompt/catalog/coun
 
 A scan writes a `pending` detection with the points it computed. When the **rider** completes the
 pickup (`rpc/complete_pickup` — the RPC refuses the family) `settle_pickup` books them as
-`points_pending` and pays the rider's fee; they become spendable only when the acopio weighs the
+`points_pending`; they become spendable only when the acopio weighs the
 delivery (`settle_delivery`). The generator can correct `reported_quantity` — a declaration — and the
-rider records `confirmed_quantity` at the door; neither pays anybody. Redemptions are a plain insert
-into `redemptions`; DB triggers validate the balance and post the ledger. Keep new money/points paths
+rider records `confirmed_quantity` and `condition` (limpia / aplastada / sucia) at the door; neither pays anybody.
+Since 2026-11-17 (`supabase/sql/2026-11-17_puntos_estado_pago_mixto.sql`, STAGING only, check with
+`python supabase/tests/puntos_estado_staging.py`) `settle_delivery` pays points per door-counted unit × condition
+factor, capped by the unit's share of the weighed kg, plus a bulk bonus per pickup (+10 % from 30 units, +20 % from 80),
+and pays the rider then too: `rider_per_kg` per weighed kg plus `rider_route_base` for a delivery of
+`rider_route_min_stops`+ pickups. `pickups.rider_earnings` is only an estimate until the weigh; every amount lives in
+`platform_settings`. Rationale: `docs/puntos-por-botella.md`, `docs/pago-rider.md`. Redemptions are a plain insert
+into `redemptions`; DB triggers validate the balance and post the ledger. Since 2026-11-11
+(`supabase/sql/2026-11-11_canje_seguro.sql`, STAGING only, check with `python supabase/tests/canje_seguro_staging.py`)
+`validate_redemption` also values it: option required and active, `points_spent` ≥ `min_points` in whole units,
+and `kind`, `monetary_value`, `status` and the payout fields are set by the database whatever the client sends. Keep new money/points paths
 on this shape: the client asks, the database decides.
 
 The rider opens that delivery from "Entregar en acopio" through **rpc/create_delivery**, which
 validates ownership and `completed` status while holding the pickups locked; direct INSERT on
 `deliveries` / `delivery_pickups` is revoked, and `settle_delivery` now refuses a batch with no
 pickups linked (it used to book the whole gross as platform margin).
+
+Since 2026-11-06 (`supabase/sql/2026-11-06_seguridad_cantidades.sql`, STAGING only): the app cannot delete
+`detections`/`detection_items`, inserts `pickup_items` with only (pickup_id, material_id, reported_quantity) and never
+deletes them; `trg_pickup_item_guard` lets the family change `reported_quantity` before collection and only the
+assigned rider change `confirmed_quantity` while arriving/collecting (trusted RPCs run as their owner and skip it);
+`settle_delivery` splits the weighed kilos by the door count, not the declaration. Check with
+`python supabase/tests/seguridad_cantidades_staging.py`. Supabase rejects a `DELETE` without `WHERE` inside API calls
+(pg_safeupdate), so functions reset temp tables with drop + create.
 
 ### Pickup lifecycle and live tracking
 
@@ -170,7 +189,7 @@ realtime — the rider heartbeats fresh fixes into `rider_profiles` every `LOCAT
 (`RiderRoot`) while the generator re-reads the pickup every `TRACKING_POLL_MS` (`GeneratorRoot`).
 Street paths and the fastest stop order come from `data/StreetRouter` (OSRM on
 routing.openstreetmap.de, no key); `RoutePlanner` (nearest neighbour + 2-opt, crow-flies) is the
-offline fallback. Test accounts for every actor: see the seed in STAGING (`*@maki.test`, `Maki12345!`).
+offline fallback. Test accounts for every actor: see the seed in STAGING (`*@ruma.test`, `Maki12345!`).
 
 Routing investigation and implementation phases: `docs/ecorider-routing-research.md`.
 Public endpoint probes passed on 2026-11-03, including the exact open Trip parameters.
@@ -190,7 +209,7 @@ Deployed on Vercel (account mrproductions, Hobby) as prebuilt files, so no sourc
 outside the repo named after the project and run `vercel deploy . --prod --yes` there. `ruma-staging.vercel.app` is staging; `ruma-recicla.vercel.app` is production, still a "Muy pronto" page.
 Hobby is non-commercial only: move to Pro or another host before operating with real money. Netlify free pins a badge over the bottom bars, which is why it was left.
 
-- `src/lib/api.ts` is the twin of `MakiRepository`: every table, RPC and function name lives there, and the
+- `src/lib/api.ts` is the twin of `RumaRepository`: every table, RPC and function name lives there, and the
   same rule holds: the client asks, the database decides. A change to a call in one usually belongs in the other.
 - `src/lib/fold.ts` mirrors `foldPhotos` in `detect-material`, as `pileTally` does on Android.
 - The role swaps CSS variables only (`[data-role="rider"]` in `styles.css`), so screens are shared when they can be.
@@ -201,42 +220,54 @@ Hobby is non-commercial only: move to Pro or another host before operating with 
 ## Conventions
 
 - **Design tokens only.** `ui/theme/` holds the whole system and a screen that writes its own
-  `Color(0x…)` or `fontSize` is a bug: `MakiColors` (roles, gradient stops, tints, the muted
-  `On*Soft` text for each gradient), `MakiType` — the scale **by the job** each style does
-  (`metricHero`, `cardTitle`, `rowTitle`, `body`, `overline`…), and `MakiSpace` / `MakiRadius` /
-  `MakiElevation` / `MakiGradient` in `MakiDesign.kt`. `MakiFont` is **DM Sans** and `MakiDisplayFont` **Bricolage Grotesque** (the PWA's fonts), shipped as
+  `Color(0x…)` or `fontSize` is a bug: `RumaColors` (roles, gradient stops, tints, the muted
+  `On*Soft` text for each gradient), `RumaType` — the scale **by the job** each style does
+  (`metricHero`, `cardTitle`, `rowTitle`, `body`, `overline`…), and `RumaSpace` / `RumaRadius` /
+  `RumaElevation` / `RumaGradient` in `RumaDesign.kt`. `RumaFont` is **DM Sans** and `RumaDisplayFont` **Bricolage Grotesque** (the PWA's fonts), shipped as
   static instances in `res/font` (not the variable file: Compose only applies weight variations
   from API 26 and minSdk is 24, so on Android 7 every weight would collapse to Regular).
   Don't reach for `MaterialTheme.colorScheme` or `MaterialTheme.typography`. Single light theme —
   dark mode is deliberately off.
-- **Five sizes, two weights.** `MakiType` resolves 15 named roles onto 12/15/20/26/40 sp and
+- **Five sizes, two weights.** `RumaType` resolves 15 named roles onto 12/15/20/26/40 sp and
   Medium/ExtraBold only. It used to spread over eleven sizes and five weights, which is why no
   screen had a hierarchy: with eleven sizes everything competes. Add a role, never a size.
 - **Colour is 10%, not half the screen.** Neutrals carry the UI; the accent is reserved for the
   one gradient hero per screen, status chips, the active tab and the primary button. Icon badges
   in `MetricTile`/`NavRow` are deliberately neutral: two hundred brand-tinted squares is the
   single loudest tell that a screen came from a template.
-- **Surfaces are planes of light.** `Modifier.makiScreen()` paints `MakiGradient.screen` (a 16%
-  luminance fall, top to bottom) and `makiCard()` is translucent white plus a hairline, so a card
+- **Surfaces are planes of light.** `Modifier.rumaScreen()` paints `RumaGradient.screen` (a 16%
+  luminance fall, top to bottom) and `rumaCard()` is translucent white plus a hairline, so a card
   picks up the colour under it. No blur: `RenderEffect` needs API 31 and minSdk is 24.
   Measured on device: card 1.22:1 against its background, all three text levels pass WCAG AA.
-- **Composite modifiers over copied chains.** `Modifier.makiCard()`, `.makiHero(brush, glow=)`,
-  `.makiOutlined(color)`, plus `HeroCard`, `MetricTile`, `NavRow`, `StatusChip` and
-  `ProgressTrack` in `MakiUi.kt`. One hero per screen: two heroes is none.
-- **One reusable nav component.** `MakiNavBar(items, currentRoute, accent, onSelect)` in
-  `MakiUi.kt`. Never write a per-screen or per-flow nav bar, and no hamburger on a home screen —
+- **Composite modifiers over copied chains.** `Modifier.rumaCard()`, `.rumaHero(brush, glow=)`,
+  `.rumaOutlined(color)`, plus `HeroCard`, `MetricTile`, `NavRow`, `StatusChip` and
+  `ProgressTrack` in `RumaUi.kt`. One hero per screen: two heroes is none.
+- **One reusable nav component.** `RumaNavBar(items, currentRoute, accent, onSelect)` in
+  `RumaUi.kt`. Never write a per-screen or per-flow nav bar, and no hamburger on a home screen —
   account actions belong in Perfil.
-- **Shared states, never a blank screen.** `MakiLoading`, `MakiEmpty`, `MakiError` (with retry),
-  `SoftCard`, `DetailHeader`, `SectionLabel` in `MakiScaffold.kt`; `PrimaryButton`,
-  `SecondaryButton`, `IconBadge`, `MakiInputField`, `Modifier.makiShadow` in `MakiUi.kt`. Lists are
+- **Shared states, never a blank screen.** `RumaLoading`, `RumaEmpty`, `RumaError` (with retry),
+  `SoftCard`, `DetailHeader`, `SectionLabel` in `RumaScaffold.kt`; `PrimaryButton`,
+  `SecondaryButton`, `IconBadge`, `RumaInputField`, `Modifier.rumaShadow` in `RumaUi.kt`. Lists are
   `LazyColumn` and always resolve to one of loading / empty / error.
-- **No `java.time`** (minSdk 24). Date formatting goes through `MakiTime` (SimpleDateFormat/Calendar)
+- **No `java.time`** (minSdk 24). Date formatting goes through `RumaTime` (SimpleDateFormat/Calendar)
   at the bottom of `GeneratorViewModel.kt`.
 - Both ViewModels call `ensureSignedIn()`, which falls back to a hardcoded test account
-  (`generador@maki.test` / `rider@maki.test`) — a demo shortcut, not something to build on.
+  (`generador@ruma.test` / `rider@ruma.test`) — a demo shortcut, not something to build on.
 - Maps are osmdroid (no API key) through the single `ui/components/OsmMap.kt`.
 - `TrainingDataStore` files camera captures under `filesDir/dataset/<label>/` for a future YOLO
   training set; it is data collection only, no on-device inference exists yet.
+
+## Cost diagram assignment (2026-11-06)
+
+The professor's diagram is `docs/costos/plantilla/diagrama_costos.jpeg`. After the first version was rejected, the user
+clarified (2026-11-06): cost the **implementation project** (build the software + set up the physical pilot), with the
+three bottom blocks (MD, MOD, CIF) costed by **resources** in two sheets — physical (local, machinery, EPP, field staff)
+and software development — and **one sheet per upper block**: administrative, sales, financial expenses, profit, IGV.
+`docs/costos/Ruma_costos_diagrama_profesora.xlsx` has those 7 sheets; regenerate it with
+`docs/costos/scripts/build_proyecto_profesora.py` (overwrites manual edits) and recalc with `scripts/recalc_excel.ps1`.
+Machinery and durable equipment enter as SUNAT depreciation for the months used; their purchase is shown as fixed-asset
+investment outside the cost. The 3-sheet monthly-operation version is kept in `docs/costos/respaldo/`.
+Keep it separate from the investor workbook `Ruma_costos_2026-11.xlsx`.
 
 ## Local skills
 

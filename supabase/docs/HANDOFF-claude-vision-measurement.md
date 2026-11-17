@@ -61,7 +61,7 @@ No eliminar snapshots ni inventar procedencia histórica para facilitar rollback
 
 Concordancia operativa, no evaluación ciega: rider ve cantidades precargadas.
 No hay backfill fiable. No se evalúan marcas ni fotos rechazadas. Alias `latest`
-pueden cambiar. Cuentas `@maki.test` se separan, pero otras cuentas pueden usarse
+pueden cambiar. Cuentas `@ruma.test` se separan, pero otras cuentas pueden usarse
 para pruebas también. Android y PWA usan resoluciones distintas y todavía no se
 segmentan por plataforma. Las pruebas PGlite usan una fixture mínima: no sustituyen
 las políticas, triggers y verificaciones del staging real.

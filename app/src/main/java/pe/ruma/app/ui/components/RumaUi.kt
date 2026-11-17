@@ -1,0 +1,597 @@
+package pe.ruma.app.ui.components
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.LocalShipping
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Recycling
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.Icons
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import pe.ruma.app.R
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import pe.ruma.app.ui.theme.RumaColors
+import pe.ruma.app.ui.theme.RumaElevation
+import pe.ruma.app.ui.theme.RumaGradient
+import pe.ruma.app.ui.theme.RumaRadius
+import pe.ruma.app.ui.theme.RumaSpace
+import pe.ruma.app.ui.theme.RumaTheme
+import pe.ruma.app.ui.theme.RumaType
+
+/** Keeping shadows here prevents each screen from inventing its own elevation. */
+fun Modifier.rumaShadow(
+    radius: Dp = RumaRadius.card,
+    elevation: Dp = RumaElevation.card,
+    color: Color = RumaColors.Shadow,
+): Modifier = this.shadow(
+    elevation = elevation,
+    shape = RoundedCornerShape(radius),
+    clip = false,
+    ambientColor = color,
+    spotColor = color,
+)
+
+/**
+ * The background every screen stands on.
+ *
+ * Thirty screens each painted it themselves, so the day the background stops
+ * being one flat colour is thirty edits instead of one.
+ */
+fun Modifier.rumaScreen(accent: Color = RumaColors.Gen): Modifier = this.drawWithCache {
+    val rider = accent == RumaColors.Rider
+    val base = Brush.verticalGradient(listOf(RumaColors.BgTop, if (rider) RumaColors.RiderBgBottom else RumaColors.BgBottom))
+    val light = Brush.radialGradient(listOf(accent.copy(alpha = 0.24f), Color.Transparent),
+        center = Offset(size.width * 0.88f, 0f), radius = size.height * 0.55f)
+    val warmth = Brush.radialGradient(listOf(RumaColors.PageAmber.copy(alpha = 0.15f), Color.Transparent),
+        center = Offset(0f, size.height * 0.34f), radius = size.height * 0.48f)
+    onDrawBehind { drawRect(base); drawRect(light); drawRect(warmth) }
+}
+fun Modifier.rumaCard(radius: Dp = RumaRadius.card): Modifier = this
+    .rumaShadow(radius, RumaElevation.card)
+    .clip(RoundedCornerShape(radius))
+    .background(RumaColors.SurfaceGlass)
+    // The hairline is the light catching the top edge. Without it a translucent
+    // surface has no edge at all and the card dissolves into the background.
+    .border(1.dp, RumaColors.Hairline, RoundedCornerShape(radius))
+
+fun Modifier.rumaHero(
+    brush: Brush,
+    radius: Dp = RumaRadius.hero,
+    glow: Color,
+): Modifier = this
+    .rumaShadow(radius, RumaElevation.hero, glow)
+    .clip(RoundedCornerShape(radius))
+    .background(brush)
+    // The PWA hero's light spot (radial at 92% 8%): without it the gradient reads flat.
+    .drawWithCache {
+        val shine = Brush.radialGradient(
+            listOf(RumaColors.HeroShine, Color.Transparent),
+            center = Offset(size.width * 0.92f, size.height * 0.08f),
+            radius = maxOf(size.width, size.height) * 0.52f,
+        )
+        onDrawBehind { drawRect(shine) }
+    }
+
+fun Modifier.rumaOutlined(color: Color, radius: Dp = RumaRadius.card): Modifier = this
+    .clip(RoundedCornerShape(radius))
+    .background(RumaColors.Surface)
+    .border(1.5.dp, color, RoundedCornerShape(radius))
+
+@Composable
+fun PrimaryButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+    color: Color = RumaColors.Gen,
+    onClick: () -> Unit = {},
+) {
+    Row(
+        modifier = modifier
+            // A fixed green shadow made rider buttons keep the generator's glow.
+            .then(if (enabled) Modifier.rumaShadow(RumaRadius.badge, RumaElevation.card, RumaGradient.glowOf(color)) else Modifier)
+            .clip(RoundedCornerShape(RumaRadius.badge))
+            .background(if (enabled) RumaGradient.button(color) else SolidColor(RumaColors.Border))
+            .clickable(enabled = enabled, onClickLabel = label, role = Role.Button, onClick = onClick)
+            .heightIn(min = 52.dp)
+            .padding(vertical = RumaSpace.lg, horizontal = RumaSpace.xl),
+        horizontalArrangement = Arrangement.spacedBy(RumaSpace.sm, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp))
+        Text(label, color = Color.White, style = RumaType.button)
+    }
+}
+
+@Composable
+fun SecondaryButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    color: Color = RumaColors.Gen,
+    enabled: Boolean = true,
+    onClick: () -> Unit = {},
+) {
+    Row(
+        modifier = modifier
+            .alpha(if (enabled) 1f else 0.4f)
+            .clip(RoundedCornerShape(RumaRadius.badge))
+            .background(RumaColors.SurfaceGlass)
+            .border(1.dp, color.copy(alpha = 0.35f), RoundedCornerShape(RumaRadius.badge))
+            .clickable(enabled = enabled, onClickLabel = label, role = Role.Button, onClick = onClick)
+            .heightIn(min = 52.dp)
+            .padding(vertical = RumaSpace.lg, horizontal = RumaSpace.xl),
+        horizontalArrangement = Arrangement.spacedBy(RumaSpace.sm, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) Icon(icon, null, tint = color, modifier = Modifier.size(20.dp))
+        Text(label, color = color, style = RumaType.button)
+    }
+}
+
+@Composable
+fun IconBadge(
+    icon: ImageVector,
+    tint: Color,
+    background: Color,
+    modifier: Modifier = Modifier,
+    boxSize: Dp = 40.dp,
+    iconSize: Dp = 20.dp,
+    radius: Dp = RumaRadius.badge,
+) {
+    Box(
+        modifier = modifier
+            .size(boxSize)
+            .clip(RoundedCornerShape(radius))
+            .background(background),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, null, tint = tint, modifier = Modifier.size(iconSize))
+    }
+}
+
+/** Rumi, the assistant: the bottle robot cropped to a circle. 40 dp matches an [IconBadge]. */
+@Composable
+fun RumiAvatar(size: Dp = 40.dp, modifier: Modifier = Modifier) {
+    Image(
+        painterResource(R.drawable.rumi_avatar), contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = modifier.size(size).clip(CircleShape).background(RumaColors.Surface),
+    )
+}
+
+data class RumaNavItem(val route: String, val icon: ImageVector, val label: String)
+
+/**
+ * Sharing navigation between role roots keeps destination styling consistent.
+ * Place it once in the flow's Scaffold `bottomBar` to avoid duplicate screen bars.
+ */
+@Composable
+fun RumaNavBar(
+    items: List<RumaNavItem>,
+    currentRoute: String?,
+    accent: Color,
+    onSelect: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            .background(RumaColors.SurfaceGlass)
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = RumaSpace.md, vertical = RumaSpace.sm),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        items.forEach { item ->
+            val selected = currentRoute == item.route
+            // The whole tab lights up, icon and label inside one accent pill: a
+            // tinted icon alone was easy to miss at a glance on the street.
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(RumaRadius.card))
+                    .background(if (selected) accent.copy(alpha = 0.10f) else Color.Transparent)
+                    .semantics { this.selected = selected }
+                    .clickable(onClickLabel = "Ir a ${item.label}", role = Role.Tab) { onSelect(item.route) }
+                    .heightIn(min = 48.dp)
+                    .padding(vertical = RumaSpace.sm),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(RumaSpace.xs),
+            ) {
+                Icon(
+                    item.icon, null,
+                    tint = if (selected) accent else RumaColors.Text2,
+                    modifier = Modifier.size(22.dp),
+                )
+                Text(
+                    item.label,
+                    color = if (selected) accent else RumaColors.Text2,
+                    style = RumaType.navLabel,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun Spacer8() = Spacer(Modifier.height(RumaSpace.sm))
+
+/**
+ * [trailing] lets address fields offer location lookup without duplicating the
+ * shared input styling or password behavior across authentication screens.
+ */
+@Composable
+fun RumaInputField(
+    label: String,
+    icon: ImageVector,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    imeAction: ImeAction = ImeAction.Next,
+    visible: Boolean = true,
+    onToggleVisible: (() -> Unit)? = null,
+    enabled: Boolean = true,
+    accent: Color = RumaColors.Gen,
+    /** The line under the field that says what it is for (PWA `Field` helper). */
+    helper: String? = null,
+    trailing: @Composable (() -> Unit)? = null,
+) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(RumaSpace.sm)) {
+        Text(label.uppercase(java.util.Locale.ROOT), color = RumaColors.Text2, style = RumaType.overline)
+        val filled = value.isNotEmpty()
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(RumaRadius.badge))
+                .background(RumaColors.SurfaceField)
+                .border(1.dp, if (filled && enabled) accent else RumaColors.Hair, RoundedCornerShape(RumaRadius.badge))
+                .heightIn(min = 52.dp)
+                .padding(horizontal = RumaSpace.lg, vertical = RumaSpace.md),
+            horizontalArrangement = Arrangement.spacedBy(RumaSpace.md), verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, null, tint = if (filled && enabled) accent else RumaColors.Text2, modifier = Modifier.size(19.dp))
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                if (value.isEmpty()) {
+                    Text(placeholder, color = RumaColors.Text2, style = RumaType.body)
+                }
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    singleLine = true,
+                    enabled = enabled,
+                    textStyle = RumaType.body.copy(color = if (enabled) RumaColors.Text else RumaColors.Text2),
+                    visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
+                    cursorBrush = SolidColor(accent),
+                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = label },
+                )
+            }
+            if (onToggleVisible != null) {
+                // The old eye always announced "show", even when it hid the password.
+                val toggleLabel = if (visible) "Ocultar contraseña" else "Mostrar contraseña"
+                Box(
+                    Modifier.size(48.dp).clip(RoundedCornerShape(RumaRadius.badge))
+                        .clickable(enabled = enabled, onClickLabel = toggleLabel, role = Role.Button, onClick = onToggleVisible),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        toggleLabel,
+                        tint = RumaColors.Text2,
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
+            }
+            trailing?.invoke()
+        }
+        if (helper != null) Text(helper, color = RumaColors.Text2, style = RumaType.bodySmall)
+    }
+}
+
+@Composable
+fun HeroCard(
+    accent: Color,
+    overline: String,
+    metric: String,
+    support: String? = null,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit = {},
+) {
+    Column(
+        modifier.fillMaxWidth()
+            .rumaHero(RumaGradient.forAccent(accent), glow = RumaGradient.glowOf(accent))
+            .padding(RumaSpace.xl),
+        verticalArrangement = Arrangement.spacedBy(RumaSpace.sm),
+    ) {
+        Text(overline, color = RumaGradient.softOn(accent), style = RumaType.overline)
+        Text(metric, color = Color.White, style = RumaType.metricHero)
+        if (support != null) {
+            Text(support, color = RumaGradient.softOn(accent), style = RumaType.bodySmall)
+        }
+        content()
+    }
+}
+
+@Composable
+fun MetricTile(
+    icon: ImageVector,
+    value: String,
+    label: String,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
+) {
+    // Height is equalised by [MetricRow]'s intrinsic measure, not by a fixed
+    // floor: a floor only sets a minimum, so one wrapping label still pushed its
+    // tile taller than its neighbours.
+    Column(
+        modifier.fillMaxHeight().rumaCard()
+            .then(
+                if (onClick != null) Modifier.clickable(
+                    onClickLabel = "Ver $label", role = Role.Button, onClick = onClick,
+                ) else Modifier
+            )
+            .heightIn(min = 112.dp)
+            .padding(RumaSpace.lg),
+        verticalArrangement = Arrangement.spacedBy(RumaSpace.sm),
+    ) {
+        // El icono es orientacion, no mensaje: en neutro deja que la cifra
+        // sea lo unico que destaca dentro de la tarjeta.
+        IconBadge(icon, RumaColors.Text2, RumaColors.SurfaceSoft)
+        // Dos lineas antes que recortar: a escala de fuente 1.3 el recorte
+        // convertia "1,241 kg" en "1,2...", que es esconder el dato.
+        Text(
+            value, color = RumaColors.Text, style = RumaType.metricMedium,
+            maxLines = 2, overflow = TextOverflow.Ellipsis,
+        )
+        Text(label, color = RumaColors.Text2, style = RumaType.bodySmall, maxLines = 2)
+    }
+}
+
+/**
+ * A row of [MetricTile]s that all end up the same height.
+ *
+ * `IntrinsicSize.Min` measures the tallest tile first and hands that height to
+ * the rest, which is the only thing that keeps the grid level once a label wraps
+ * at a large system font scale.
+ */
+@Composable
+fun MetricRow(
+    modifier: Modifier = Modifier,
+    content: @Composable RowScope.() -> Unit,
+) {
+    Row(
+        modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        horizontalArrangement = Arrangement.spacedBy(RumaSpace.md),
+        content = content,
+    )
+}
+
+@Composable
+fun NavRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String? = null,
+    accent: Color = RumaColors.Gen,
+    trailing: String? = null,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier,
+    framed: Boolean = true,
+    /** Replaces the icon badge, e.g. Rumi's avatar on "Pregúntale a Rumi". */
+    leading: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier.fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.45f)
+            .then(if (framed) Modifier.rumaCard() else Modifier)
+            .then(
+                if (enabled) Modifier.clickable(
+                    onClickLabel = "Ir a $title", role = Role.Button, onClick = onClick,
+                ) else Modifier.semantics(mergeDescendants = true) { disabled() }
+            )
+            .heightIn(min = 48.dp)
+            .padding(RumaSpace.md),
+        horizontalArrangement = Arrangement.spacedBy(RumaSpace.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Cinco filas con cinco insignias de color distinto son un arcoiris,
+        // no una jerarquia: el icono orienta, el texto es lo que se lee.
+        if (leading != null) leading() else IconBadge(icon, accent, RumaColors.SurfaceGlass)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(RumaSpace.xs)) {
+            Text(title, color = RumaColors.Text, style = RumaType.rowTitle)
+            if (subtitle != null) {
+                Text(subtitle, color = RumaColors.Text2, style = RumaType.bodySmall)
+            }
+        }
+        if (trailing != null) {
+            Text(trailing, color = accent, style = RumaType.label)
+        }
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight, null,
+            tint = RumaColors.Text3, modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+/**
+ * Circles joined by dashed lines (Stitch "pasos de pago" / "Seguimiento"): steps before
+ * [current] carry a check, [current] a ring, the rest a number. current = steps.size marks all done.
+ * Each step is a title plus an optional second line (a time, a points figure).
+ */
+@Composable
+fun StepDots(steps: List<Pair<String, String?>>, current: Int, modifier: Modifier = Modifier) {
+    val diameter = RumaSpace.md * 3
+    Row(
+        modifier.fillMaxWidth().drawBehind {
+            val step = size.width / steps.size
+            val radius = diameter.toPx() / 2
+            val gap = RumaSpace.xs.toPx()
+            repeat(steps.size - 1) { index ->
+                drawLine(
+                    color = if (index < current) RumaColors.Gen else RumaColors.Border,
+                    start = Offset(step * (index + 0.5f) + radius + gap, radius),
+                    end = Offset(step * (index + 1.5f) - radius - gap, radius),
+                    strokeWidth = RumaSpace.xs.toPx() / 2,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(gap, gap)),
+                )
+            }
+        },
+    ) {
+        steps.forEachIndexed { index, (title, subtitle) ->
+            val done = index < current
+            val now = index == current
+            val accent = if (done || now) RumaColors.Gen else RumaColors.Text2
+            Column(
+                Modifier.weight(1f).semantics(mergeDescendants = true) {
+                    stateDescription = when {
+                        done -> "Paso ${index + 1} completado"
+                        now -> "Paso ${index + 1} actual"
+                        else -> "Paso ${index + 1} pendiente"
+                    }
+                },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(RumaSpace.xs),
+            ) {
+                Box(
+                    Modifier.size(diameter).clip(CircleShape)
+                        .background(if (done) RumaColors.Gen else RumaColors.Surface)
+                        .border(RumaSpace.xs / 2, if (done || now) RumaColors.Gen else RumaColors.Border, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (done) Icon(Icons.Filled.Check, null, tint = RumaColors.OnDark, modifier = Modifier.size(RumaSpace.xl))
+                    else Text("${index + 1}", style = RumaType.rowTitle, color = accent)
+                }
+                Text(title, style = RumaType.chip, color = if (done) RumaColors.Text else accent, textAlign = TextAlign.Center)
+                if (subtitle != null) Text(subtitle, style = RumaType.caption, color = RumaColors.Text2, textAlign = TextAlign.Center)
+            }
+        }
+    }
+}
+
+@Composable
+fun StatusChip(text: String, color: Color, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        modifier = modifier.clip(RoundedCornerShape(RumaRadius.pill))
+            .background(color.copy(alpha = 0.12f))
+            .padding(horizontal = RumaSpace.sm + RumaSpace.xs / 2, vertical = RumaSpace.xs),
+        color = color,
+        style = RumaType.chip,
+    )
+}
+
+@Composable
+fun ProgressTrack(
+    progress: Float,
+    modifier: Modifier = Modifier,
+    track: Color = RumaColors.OnGradientTrack,
+    fill: Color = Color.White,
+) {
+    val boundedProgress = if (progress.isNaN()) 0f else progress.coerceIn(0f, 1f)
+    Box(
+        modifier.fillMaxWidth().height(8.dp)
+            .semantics { progressBarRangeInfo = ProgressBarRangeInfo(boundedProgress, 0f..1f) }
+            .clip(RoundedCornerShape(RumaRadius.pill))
+            .background(track),
+    ) {
+        Box(
+            Modifier.fillMaxWidth(boundedProgress).fillMaxHeight()
+                .clip(RoundedCornerShape(RumaRadius.pill)).background(fill),
+        )
+    }
+}
+
+@Preview(showBackground = true, widthDp = 400, heightDp = 1100)
+@Composable
+private fun RumaComponentsPreview() {
+    RumaTheme {
+        Column(
+            Modifier.fillMaxWidth().background(RumaColors.Bg)
+                .verticalScroll(rememberScrollState()).padding(RumaSpace.gutter),
+            verticalArrangement = Arrangement.spacedBy(RumaSpace.stack),
+        ) {
+            HeroCard(RumaColors.Gen, "SALDO DISPONIBLE", "S/ 128.50", "Tu reciclaje suma") {
+                ProgressTrack(0.65f)
+            }
+            HeroCard(RumaColors.Rider, "GANANCIAS DEL MES", "S/ 840.00", "24 recojos completados") {
+                ProgressTrack(1.4f)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(RumaSpace.md)) {
+                MetricTile(Icons.Filled.Recycling, "32 kg", "Reciclados", RumaColors.Gen, Modifier.weight(1f))
+                MetricTile(Icons.Filled.LocalShipping, "24", "Recojos", RumaColors.Rider, Modifier.weight(1f), onClick = {})
+            }
+            NavRow(Icons.Filled.AccountBalanceWallet, "Billetera", "Consulta tu saldo", trailing = "S/ 128.50", onClick = {})
+            NavRow(Icons.Filled.LocalShipping, "Mi ruta", "Tus próximos recojos", accent = RumaColors.Rider, onClick = {})
+            NavRow(Icons.Filled.Person, "Perfil", "Disponible próximamente", enabled = false, onClick = {})
+            Row(horizontalArrangement = Arrangement.spacedBy(RumaSpace.sm)) {
+                StatusChip("Generador", RumaColors.Gen)
+                StatusChip("Rider", RumaColors.Rider)
+                StatusChip("Acopio", RumaColors.Admin)
+                StatusChip("Saldo", RumaColors.Money)
+            }
+        }
+    }
+}

@@ -1,0 +1,22 @@
+{
+  "hojas": [
+    "1. Parte física",
+    "2. Parte software",
+    "3. Gastos y precio"
+  ],
+  "formulas": 84,
+  "errores": 0,
+  "vinculos_externos": 0,
+  "fisico": 4720.685,
+  "software": 6309.725056329065,
+  "produccion": 11030.410056329067,
+  "administrativos": 4435,
+  "ventas": 1075,
+  "financieros": 50,
+  "costo_total": 16590.410056329067,
+  "utilidad_objetivo": 3318.0820112658134,
+  "valor_venta": 19908.49206759488,
+  "igv": 3583.5285721670784,
+  "precio_venta": 23492.02063976196,
+  "diferencia_origen": 0
+}

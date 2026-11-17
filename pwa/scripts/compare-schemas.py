@@ -47,7 +47,7 @@ if S and P:
     sd, pd = defs(S), defs(P)
     missing = {t: sorted(set(sd[t].get("properties", {})) - set(pd[t].get("properties", {}))) for t in set(sd) & set(pd)}
     print("COLUMNAS que faltan en produccion:", {t: c for t, c in sorted(missing.items()) if c} or "ninguna")
-for fn in ["detect-material", "maki-assistant"]:
+for fn in ["detect-material", "ruma-assistant"]:
     print(f"Edge Function {fn}: staging {get(surl, skey, '/functions/v1/' + fn, 'OPTIONS')[0]}, produccion {get(purl, pkey, '/functions/v1/' + fn, 'OPTIONS')[0]}")
 for table in ["materials", "redemption_options", "collection_centers", "v_material_prices", "v_material_demand", "market_news", "challenges"]:
     row = []

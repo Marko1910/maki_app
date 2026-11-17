@@ -1,0 +1,10 @@
+primera ppt  solo nombre y logo en grande
+
+segunda ppt habalr sobre el problema y necesidad 
+tercera propuesta de solución
+porpuetsa d valor de la solucion
+modelo de negocio(9 puntos) solo resaltar lo principal COSTOS
+mvp y validadcion preentacion de video y encuestas
+luego arquitectura de la app
+viabilidad y conclusiones 
+

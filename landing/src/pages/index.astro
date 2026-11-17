@@ -1,0 +1,575 @@
+---
+import "../styles/page.css";
+
+// Precios reales de una entrevista a un centro de acopio de Trujillo (octubre 2026):
+// lo que Aceros Arequipa y los compradores le pagan al acopio por kilo.
+const materiales = [
+  { id: "PET", nombre: "Botellas PET", soles: 1.0 },
+  { id: "CAR", nombre: "Cartón", soles: 0.3 },
+  { id: "FER", nombre: "Chatarra", soles: 0.6 },
+];
+
+// Cada pantalla de la vitrina es una captura de un teléfono, sobre cuentas de prueba.
+const pantallas = [
+  { id: "hogar", nombre: "Inicio", disco: "menta",
+    dato: "El puesto del hogar en su cuadra, el CO₂ evitado y los dos botones que importan: escanear y pedir recojo.",
+    alt: "Inicio del hogar en Ruma: su puesto en la cuadra, el CO₂ evitado y el botón de escanear." },
+  { id: "mercado", nombre: "Mercado Vivo", disco: "paso",
+    dato: "El precio por kilo de cada material, tomado del acopio, y lo que de eso le toca al hogar.",
+    alt: "Mercado Vivo: el precio por kilo de cada material y la parte del hogar." },
+  { id: "seguimiento", nombre: "Seguimiento", disco: "menta",
+    dato: "El hogar ve acercarse a su Eco-Rider sobre el mapa de su propia calle, con cada cambio de estado avisado.",
+    alt: "Eco-Rider asignado a dos kilómetros, sobre el mapa de Buenos Aires, en Trujillo." },
+  { id: "rider", nombre: "Turno del rider", disco: "verde",
+    dato: "El Eco-Rider abre su turno, ve lo que lleva ganado y queda disponible para el despacho automático.",
+    alt: "Inicio del Eco-Rider: su saldo, sus recojos del día y el interruptor de turno." },
+  { id: "perfil", nombre: "Perfil", disco: "paso",
+    dato: "Los recojos, los kilos y el CO₂ que un Eco-Rider lleva acumulados, en el entorno de pruebas.",
+    alt: "Perfil de un Eco-Rider con sus recojos, kilos reciclados y CO₂ evitado." },
+];
+
+// Lo que se afirma sobre la defensa, una línea por paso, con la captura que lo muestra
+// y una leyenda que dice qué se está viendo.
+const defensas = [
+  { frase: "Nadie puede inflar los puntos.", detalle: "El cliente pide, la base de datos decide. La app nunca escribe un punto por su cuenta.",
+    foto: "/app/mercado.webp", pie: "El precio por kilo viene del acopio. La app solo lo muestra; no lo puede cambiar." },
+  { frase: "Cada cuadro vuelve firmado.", detalle: "El servidor firma con HMAC la sesión, el material, la cantidad y la calidad de cada cuadro que puntúa.",
+    foto: "/app/hogar.webp", pie: "«Tomar foto» abre la cámara. Cada cuadro que cuenta lo firma el servidor, no el teléfono." },
+  { frase: "Cuenta el máximo, nunca la suma.", detalle: "La misma botella aparece en veinte cuadros. Al cerrar, se toma el máximo por material.",
+    foto: "/app/seguimiento.webp", pie: "El recojo lleva lo contado: 6 PET y 2 latas, no la suma de todos los cuadros." },
+  { frase: "La foto de una pantalla no pasa.", detalle: "El giroscopio exige un recorrido real y un modelo de visión descarta pantallas y fotos impresas.",
+    foto: "/app/escaneo.webp", pie: "El visor de la cámara: solo cuenta si el teléfono se mueve alrededor de residuos reales." },
+  { frase: "El rider confirma en la puerta.", detalle: "Lo que la familia declara y lo que el rider cuenta son dos cifras distintas, y ninguna paga todavía.",
+    foto: "/app/rider.webp", pie: "El Eco-Rider en turno anota lo que encuentra en la puerta, aparte de lo que declaró la familia." },
+  { frase: "Solo la balanza paga.", detalle: "Los puntos quedan pendientes hasta que el acopio pesa la entrega. Un escaneo exagerado no produce dinero.",
+    foto: "/app/cancelado.webp", pie: "Sin entrega no hay pago: un recojo cancelado se avisa a las dos partes y no suma nada." },
+];
+
+const correoInversion =
+  "mailto:hola@ruma.pe?subject=Inversi%C3%B3n%20en%20Ruma&body=Hola%2C%20vi%20la%20p%C3%A1gina%20y%20quiero%20ver%20el%20modelo%20y%20los%20n%C3%BAmeros%20de%20campo.";
+const correoApk =
+  "mailto:hola@ruma.pe?subject=Quiero%20probar%20Ruma&body=Hola%2C%20p%C3%ADdanme%20el%20APK%20y%20una%20cuenta%20de%20prueba%20de%20cada%20rol.";
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ruma · Reciclaje domiciliario pagado al kilo</title>
+    <meta
+      name="description"
+      content="Ruma convierte el reciclaje de una casa peruana en dinero: una cámara cuenta los residuos, un Eco-Rider los recoge y la balanza del acopio decide cuánto valen. App Android en Trujillo."
+    />
+    <meta name="theme-color" content="#082620" />
+    <meta property="og:title" content="Ruma · Reciclaje domiciliario pagado al kilo" />
+    <meta property="og:description" content="Una cámara cuenta lo que juntas en casa y la balanza del acopio decide cuánto vale." />
+    <meta property="og:image" content="/fardo/fardo.webp" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" href="/fuentes/inter-extrabold.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fuentes/inter-medium.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" as="image" href="/video/ruma-inicio.webp" fetchpriority="high" />
+    <script is:inline>
+      document.documentElement.classList.add("js");
+      // El video del héroe solo corre si la persona no pidió menos movimiento ni ahorro de datos.
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches && !(navigator.connection && navigator.connection.saveData))
+        document.documentElement.classList.add("con-video");
+    </script>
+  </head>
+
+  <body>
+    <!-- ================= Héroe: el fardo, más grande de lo razonable ================= -->
+    <header class="heroe" id="inicio">
+      <nav class="barra" aria-label="Principal">
+        <a class="marca" href="#inicio" aria-label="Ruma, inicio">
+          <!-- El logo de Ruma: la botella delante de la ruma de cartón (versión sobre oscuro). -->
+          <svg viewBox="0 0 48 48" width="38" height="38" aria-hidden="true">
+            <g fill="#3A7A68">
+              <rect x="4.2" y="21.2" width="11" height="22.6" rx="1.2" transform="rotate(-4 9.7 32.5)" />
+              <rect x="32.4" y="20.4" width="11" height="21.6" rx="1.2" transform="rotate(4 37.9 31.2)" />
+            </g>
+            <g fill="#2B6656">
+              <rect x="4.6" y="19.8" width="11" height="23.8" rx="1.2" />
+              <rect x="31.9" y="19.4" width="11.2" height="22.4" rx="1.2" />
+            </g>
+            <rect x="20" y="4" width="7.1" height="4.6" rx="1" fill="#33AE86" />
+            <path d="M21.4 8.4 V13.6 C21.4 16.2 17.4 16.6 17.4 20.4 V41.8 Q17.4 44 19.6 44 H28 Q30.2 44 30.2 41.8 V20.4 C30.2 16.6 25.8 16.2 25.8 13.6 V8.4 Z" fill="#33AE86" />
+            <rect x="19.5" y="20.6" width="1.3" height="20.4" rx="0.65" fill="#8DEBCB" />
+          </svg>
+          <span>ruma</span>
+        </a>
+        <div class="enlaces">
+          <a href="#como">Cómo funciona</a>
+          <a href="#economia">Economía</a>
+          <a href="#defensa">Seguridad</a>
+        </div>
+        <a class="boton boton-claro" href={correoInversion}>Hablemos</a>
+      </nav>
+
+      <div class="heroe-texto">
+        <h1>Tu reciclaje,<br /> pagado al kilo.</h1>
+        <p class="heroe-frase">
+          Una cámara cuenta lo que juntas en casa. La balanza del acopio decide cuánto vale.
+        </p>
+        <p class="heroe-acciones">
+          <a class="boton" href={correoInversion}>Ver el modelo y los números</a>
+          <a class="enlace" href="#como">Cómo funciona</a>
+        </p>
+      </div>
+
+      <!-- El gancho: las hojas caen y se vuelven una ruma (render de Blender, una sola vez).
+           La imagen fija es el último cuadro: se queda si el video no puede o no debe correr. -->
+      <figure class="heroe-objeto" id="fardo-heroe">
+        <img
+          class="heroe-quieto"
+          src="/fardo/fardo.webp"
+          srcset="/fardo/fardo-820.webp 820w, /fardo/fardo.webp 1212w"
+          sizes="(max-width: 700px) 130vw, 64vw"
+          width="1212" height="1032" decoding="async"
+          alt="Una ruma de cartón prensado y atado con tres flejes de acero, lista para el acopio."
+        />
+        <video class="heroe-video" id="video-heroe" muted playsinline preload="auto" disablepictureinpicture
+               poster="/video/ruma-inicio.webp" width="1212" height="1032" aria-hidden="true">
+          <source src="/video/ruma-arma.webm" type="video/webm" />
+          <source src="/video/ruma-arma.mp4" type="video/mp4" />
+        </video>
+      </figure>
+    </header>
+
+    <main>
+      <!-- ================= El problema: una ruma que se regala ================= -->
+      <section class="intro" aria-labelledby="t-intro">
+        <div class="marco intro-cabeza">
+          <h2 id="t-intro" class="entra">Hoy la ruma<br /> se regala.</h2>
+          <div class="leyendas">
+            <p class="entra">
+              Una bodega de Trujillo junta cajas y botellas detrás del mostrador y se las da gratis
+              al triciclo que pasa primero. No sabe cuánto valen.
+            </p>
+            <p class="entra">
+              A dos cuadras, un acopio vende treinta toneladas de chatarra cada quince días a Aceros
+              Arequipa. Su problema no es vender: es llenar el camión.
+            </p>
+          </div>
+        </div>
+        <figure class="panorama entra-foto">
+          <img src="/fotos/motocarga.webp" width="1920" height="1280" loading="lazy" decoding="async"
+               alt="Una motocarga de reciclaje en una calle de tierra en Perú, cargada con botellas, cajas y bolsas." />
+          <figcaption class="marco">
+            Entre la casa y el acopio hoy solo hay una motocarga que pasa cuando puede. Falta un sistema
+            que sepa qué hay, dónde está y cuánto vale antes de que alguien arranque.
+          </figcaption>
+        </figure>
+      </section>
+
+      <!-- ================= Cómo funciona: tres pasos que crecen ================= -->
+      <section id="como" class="como" aria-labelledby="t-como">
+        <div class="marco losas">
+          <h2 id="t-como" class="entra">De la casa<br /> a la balanza.</h2>
+
+          <article class="losa losa-1">
+            <div class="placa-losa paso">
+              <img src="/app/hogar.webp" width="560" height="1125" loading="lazy" decoding="async"
+                   alt="Inicio del hogar en Ruma, con el botón para tomar foto a sus residuos." />
+            </div>
+            <h3>La casa escanea</h3>
+            <p>Apunta la cámara y camina alrededor de sus residuos. Un modelo de visión los identifica y los cuenta cuadro a cuadro.</p>
+          </article>
+
+          <article class="losa losa-2">
+            <div class="placa-losa menta">
+              <img src="/app/seguimiento.webp" width="560" height="1125" loading="lazy" decoding="async"
+                   alt="El hogar sigue a su Eco-Rider sobre el mapa mientras se acerca." />
+            </div>
+            <h3>El rider recoge</h3>
+            <p>El despacho asigna al Eco-Rider más cercano, a menos de 20 km. Llega por calles reales y confirma lo que encuentra.</p>
+          </article>
+
+          <article class="losa losa-3">
+            <div class="placa-losa verde">
+              <!-- El comprobante que emite el panel del acopio al pesar: ahí se libera el saldo. -->
+              <div class="ticket" data-ui>
+                <p class="ticket-titulo">Pesaje en el acopio · lote del martes</p>
+                <dl>
+                  <div><dt>PET · 12.4 kg</dt><dd>S/12.40</dd></div>
+                  <div><dt>Cartón · 18.0 kg</dt><dd>S/5.40</dd></div>
+                  <div><dt>Chatarra · 6.5 kg</dt><dd>S/3.90</dd></div>
+                  <div class="ticket-total"><dt>Pesado en balanza</dt><dd>S/21.70</dd></div>
+                  <div><dt>Para las familias (40%)</dt><dd>S/8.68</dd></div>
+                </dl>
+                <p class="ticket-libera">8,680 puntos pasan de pendientes a saldo</p>
+              </div>
+            </div>
+            <h3>La balanza paga</h3>
+            <p>En el acopio la carga se pesa. Recién ahí los puntos se vuelven saldo: dinero en efectivo o descuento en arbitrios municipales.</p>
+          </article>
+        </div>
+      </section>
+
+      <!-- ================= Economía: la cosa viva ================= -->
+      <section id="economia" class="economia" aria-labelledby="t-economia">
+        <div class="marco calculadora">
+          <div class="controles">
+            <h2 id="t-economia" class="entra">¿Cuánto vale<br /> tu ruma?</h2>
+            <fieldset class="materiales entra">
+              <legend>¿Qué junta la casa?</legend>
+              {materiales.map((m, i) => (
+                <button type="button" data-soles={m.soles} aria-pressed={i === 0 ? "true" : "false"}>
+                  <span>{m.nombre}</span>
+                  <span class="precio">S/{m.soles.toFixed(2)} el kilo</span>
+                </button>
+              ))}
+            </fieldset>
+            <div class="control entra">
+              <label for="kilos">Kilos al mes: <output id="o-kilos" for="kilos">8</output></label>
+              <input type="range" id="kilos" min="1" max="40" value="8" step="1" aria-describedby="kilos-nota" />
+              <p id="kilos-nota">Una familia de cuatro junta cerca de ocho kilos al mes.</p>
+            </div>
+          </div>
+
+          <div class="salida entra" aria-live="polite">
+            <p class="cifra-viva" id="o-hogar">S/3.20</p>
+            <p class="cifra-pie">para la familia, cada mes</p>
+            <dl>
+              <div><dt>Valor en el acopio</dt><dd id="o-valor">S/8.00</dd></div>
+              <div><dt>Para la familia (40%)</dt><dd id="o-hogar-2">S/3.20</dd></div>
+              <div><dt>En puntos</dt><dd id="o-puntos">3,200</dd></div>
+            </dl>
+            <p class="nota-salida">Precios que un acopio de Trujillo paga hoy por kilo.</p>
+          </div>
+        </div>
+
+        <div class="marco hechos">
+          <ul class="lista-hechos">
+            <li class="entra"><b>40%</b> <span>de lo que vale cada kilo en el acopio es de la familia. Mil puntos son un sol.</span></li>
+            <li class="entra"><b>30 t</b> <span>cada quince días mueve un solo acopio de Trujillo. La demanda ya existe.</span></li>
+            <li class="entra"><b>1 bodega</b> <span>produce ese volumen cada semana y hoy lo regala: es el proveedor que llena una ruta.</span></li>
+          </ul>
+          <figure class="foto-hechos entra-foto">
+            <img src="/fotos/recicladores.webp" width="1200" height="800" loading="lazy" decoding="async"
+                 alt="Dos recicladores peruanos atan un saco grande de material reciclable." />
+            <figcaption>Recicladores en Perú preparan material para venderlo al acopio.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- ================= Seguridad: el fardo gira mientras se afirma ================= -->
+      <section id="defensa" class="defensa" aria-labelledby="t-defensa"
+               data-detalles={JSON.stringify(defensas.map((d) => d.detalle))}>
+        <div class="escena">
+          <div class="escena-objeto">
+            <img id="giro-poster" src="/giro/g00.webp" width="900" height="810" loading="lazy" decoding="async" alt="" />
+            <canvas id="giro" width="900" height="810" tabindex="0" role="img"
+                    aria-label="La ruma de cartón en 3D. Arrástrala o usa las flechas para girarla."></canvas>
+            <p class="giro-pista" aria-hidden="true">Arrastra la ruma para girarla</p>
+          </div>
+          <ol class="frases" aria-label="Por qué nadie puede inflar los puntos">
+            {defensas.map((d, i) => (
+              <li data-paso={i} class={i === 0 ? "activa" : ""}>
+                {i === 0 ? <h2 id="t-defensa">{d.frase}</h2> : <span>{d.frase}</span>}
+              </li>
+            ))}
+          </ol>
+          <p class="detalle" id="detalle">{defensas[0].detalle}</p>
+          {defensas.map((d, i) => (
+            <figure class={`prueba${i === 0 ? " activa" : ""}${i % 2 ? " der" : " izq"}`} data-paso={i}>
+              <img src={d.foto} width="560" height="1125" loading="lazy" decoding="async" alt="" />
+              <figcaption>{d.pie}</figcaption>
+            </figure>
+          ))}
+        </div>
+        {defensas.map((_, i) => <div class="marcador" data-paso={i} aria-hidden="true"></div>)}
+      </section>
+
+      <!-- ================= Vitrina: la app, pantalla por pantalla ================= -->
+      <section id="producto" class="vitrina" aria-labelledby="t-producto">
+        <div class="marco vitrina-marco">
+          <div class="disco-zona">
+            <div class="disco menta" id="disco"></div>
+            {pantallas.map((p, i) => (
+              <img class={`pantalla${i === 0 ? " activa" : ""}`} data-id={p.id} src={`/app/${p.id}.webp`}
+                   width="560" height="1125" loading="lazy" decoding="async" alt={p.alt} />
+            ))}
+            <div class="dato">
+              <p id="dato">{pantallas[0].dato}</p>
+              <a class="enlace" href={correoApk}>Pedir el APK</a>
+            </div>
+          </div>
+          <div class="indice">
+            <h2 id="t-producto">La app ya corre</h2>
+            <ul role="list">
+              {pantallas.map((p, i) => (
+                <li>
+                  <button type="button" data-id={p.id} data-disco={p.disco} data-dato={p.dato}
+                          aria-pressed={i === 0 ? "true" : "false"}>{p.nombre}</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= Cierre: el objeto vuelve ================= -->
+      <section id="hablemos" class="cierre" aria-labelledby="t-cierre">
+        <figure class="cierre-objeto">
+          <img src="/fardo/cierre.webp" srcset="/fardo/cierre-1000.webp 1000w, /fardo/cierre.webp 1800w" sizes="(max-width: 1024px) 120vw, 80vw" width="1800" height="1620" loading="lazy" decoding="async"
+               alt="La misma ruma de cartón, vista desde su otro costado." />
+        </figure>
+        <div class="cierre-texto">
+          <h2 id="t-cierre" class="entra">Hablemos de la ruma.</h2>
+          <p class="entra">
+            Android nativo sobre Supabase: escaneo por visión, despacho al rider más cercano, rutas por
+            calle, liquidación en el acopio y un panel web para el operador. El producto corre; el piloto
+            con vecinos de Trujillo es lo siguiente.
+          </p>
+          <p class="cierre-dato entra">S/1.00 el kilo de PET en el acopio, hoy.</p>
+          <p class="entra cierre-acciones">
+            <a class="boton" href={correoInversion}>Escribir al equipo</a>
+            <a class="enlace" href={correoApk}>Pedir el APK</a>
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <!-- ================= Pie: compacto, la marca y lo necesario ================= -->
+    <footer class="pie">
+      <div class="pie-marca">
+        <svg viewBox="0 0 48 48" width="56" height="56" aria-hidden="true">
+          <g fill="#3A7A68">
+            <rect x="4.2" y="21.2" width="11" height="22.6" rx="1.2" transform="rotate(-4 9.7 32.5)" />
+            <rect x="32.4" y="20.4" width="11" height="21.6" rx="1.2" transform="rotate(4 37.9 31.2)" />
+          </g>
+          <g fill="#2B6656">
+            <rect x="4.6" y="19.8" width="11" height="23.8" rx="1.2" />
+            <rect x="31.9" y="19.4" width="11.2" height="22.4" rx="1.2" />
+          </g>
+          <rect x="20" y="4" width="7.1" height="4.6" rx="1" fill="#33AE86" />
+          <path d="M21.4 8.4 V13.6 C21.4 16.2 17.4 16.6 17.4 20.4 V41.8 Q17.4 44 19.6 44 H28 Q30.2 44 30.2 41.8 V20.4 C30.2 16.6 25.8 16.2 25.8 13.6 V8.4 Z" fill="#33AE86" />
+          <rect x="19.5" y="20.6" width="1.3" height="20.4" rx="0.65" fill="#8DEBCB" />
+        </svg>
+        <div>
+          <p class="pie-nombre">ruma</p>
+          <p class="pie-lema">Reciclaje domiciliario pagado al kilo, hecho en Trujillo.</p>
+        </div>
+      </div>
+      <nav class="pie-enlaces" aria-label="Pie">
+        <a href="#como">Cómo funciona</a>
+        <a href="#economia">Economía</a>
+        <a href="#defensa">Seguridad</a>
+        <a href="#producto">La app</a>
+      </nav>
+      <address class="pie-contacto">
+        <a href="mailto:hola@ruma.pe">hola@ruma.pe</a>
+        <span>Trujillo, La Libertad, Perú</span>
+        <a href={correoApk}>Pedir el APK</a>
+      </address>
+      <p class="pie-legal">
+        © 2026 Ruma · Equipo DeepCoders. Fotos: «Recycling Collection Cart» y «Packing the Recyclables»,
+        Alex Proimos, <a href="https://creativecommons.org/licenses/by/2.0/">CC BY 2.0</a>, vía
+        <a href="https://commons.wikimedia.org/wiki/File:Recycling_Collection_Cart_(7008782935).jpg">Wikimedia Commons</a>.
+      </p>
+    </footer>
+
+    <script>
+      const reducido = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      // ---- Calculadora: la cosa viva --------------------------------------------
+      const PUNTOS_POR_SOL = 1000;
+      const PARTE_HOGAR = 0.4;
+      const soles = (n: number) => "S/" + n.toFixed(2);
+      const $ = (id: string) => document.getElementById(id)!;
+      const botonesMaterial = Array.from(document.querySelectorAll<HTMLButtonElement>(".materiales button"));
+      const kilos = $("kilos") as HTMLInputElement;
+      let precio = Number(botonesMaterial[0]?.dataset.soles ?? 1);
+
+      function pintar() {
+        const kg = Number(kilos.value);
+        const valor = precio * kg;
+        const hogar = valor * PARTE_HOGAR;
+        $("o-kilos").textContent = String(kg);
+        $("o-valor").textContent = soles(valor);
+        $("o-hogar").textContent = soles(hogar);
+        $("o-hogar-2").textContent = soles(hogar);
+        $("o-puntos").textContent = Math.round(hogar * PUNTOS_POR_SOL).toLocaleString("es-PE");
+      }
+      botonesMaterial.forEach((b) =>
+        b.addEventListener("click", () => {
+          botonesMaterial.forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+          precio = Number(b.dataset.soles);
+          pintar();
+        }),
+      );
+      kilos.addEventListener("input", pintar);
+      pintar();
+
+      // ---- Entradas: una vez, por partes ----------------------------------------
+      const verEntrada = new IntersectionObserver(
+        (lista) =>
+          lista.forEach((e) => {
+            if (!e.isIntersecting) return;
+            e.target.classList.add("dentro");
+            verEntrada.unobserve(e.target);
+          }),
+        { rootMargin: "0px 0px -10% 0px" },
+      );
+      // Dentro de cada sección las partes llegan en orden de lectura.
+      document.querySelectorAll("section").forEach((s) =>
+        s.querySelectorAll<HTMLElement>(".entra").forEach((el, i) => el.style.setProperty("--i", String(i))),
+      );
+      const pendientes = new Set(document.querySelectorAll(".entra, .entra-foto, .losa"));
+      pendientes.forEach((el) => verEntrada.observe(el));
+      // Un salto de scroll (un ancla, el fin de página) puede pasar por encima de un bloque sin que
+      // el observador lo vea cruzar: lo que ya quedó arriba también entra.
+      let pendienteRaf = 0;
+      addEventListener("scroll", () => {
+        if (pendienteRaf || !pendientes.size) return;
+        pendienteRaf = requestAnimationFrame(() => {
+          pendienteRaf = 0;
+          pendientes.forEach((el) => {
+            if (el.getBoundingClientRect().top < innerHeight * 0.9) {
+              el.classList.add("dentro"); pendientes.delete(el); verEntrada.unobserve(el);
+            }
+          });
+        });
+      }, { passive: true });
+      // ---- Héroe: el video arma la ruma una vez y se queda en el último cuadro ----
+      const video = $("video-heroe") as HTMLVideoElement;
+      const html = document.documentElement;
+      if (html.classList.contains("con-video")) {
+        // Si en 4 s no arrancó (autoplay bloqueado, red lenta), se queda la imagen fija.
+        const rendirse = setTimeout(() => html.classList.remove("con-video"), 4000);
+        video.addEventListener("playing", () => clearTimeout(rendirse), { once: true });
+        video.addEventListener("error", () => html.classList.remove("con-video"), true);
+        video.play().catch(() => {
+          // Algunos móviles bloquean el autoplay hasta el primer gesto: se intenta ahí.
+          addEventListener("pointerdown", () => video.play().catch(() => {}), { once: true });
+        });
+      }
+
+      // ---- El fardo del héroe sube un poco al bajar ------------------------------
+      const fardoHeroe = $("fardo-heroe");
+      if (fardoHeroe && !reducido) {
+        addEventListener("scroll", () => {
+          const t = Math.min(1, scrollY / innerHeight);
+          fardoHeroe.style.translate = `0 ${-t * 9}%`;
+        }, { passive: true });
+      }
+
+      // ---- Seguridad: frases que bajan y un fardo que gira ------------------------
+      // 72 vistas renderizadas en Blender, una cada 5°. Se pintan en un canvas ya decodificadas:
+      // cambiar el src de un <img> en cada paso es lo que hacía parpadear la ruma.
+      const N = 72;
+      const lienzo = $("giro") as HTMLCanvasElement;
+      const ctx = lienzo.getContext("2d")!;
+      const poster = $("giro-poster");
+      const defensa = $("defensa");
+      const frases = Array.from(document.querySelectorAll<HTMLElement>(".frases li"));
+      const pruebas = Array.from(document.querySelectorAll<HTMLElement>(".prueba"));
+      const textos: string[] = JSON.parse(defensa.dataset.detalles ?? "[]");
+      const cuadros: (HTMLImageElement | null)[] = new Array(N).fill(null);
+      const ruta = (k: number) => `/giro/g${k < 10 ? "0" : ""}${k}.webp`;
+
+      let pintado = -1;
+      const pintar3d = (k: number) => {
+        // Si esa vista aún no llegó, la más cercana que ya esté lista: nunca un cuadro vacío.
+        for (let d = 0; d < N / 2; d++) {
+          for (const j of [(k + d) % N, (k - d + N) % N]) {
+            const c = cuadros[j];
+            if (!c) continue;
+            if (j !== pintado) {
+              ctx.clearRect(0, 0, lienzo.width, lienzo.height);
+              ctx.drawImage(c, 0, 0, lienzo.width, lienzo.height);
+              pintado = j;
+              poster.style.opacity = "0";
+            }
+            return;
+          }
+        }
+      };
+
+      let cargando = false;
+      const cargarCuadros = () => {
+        if (cargando) return;
+        cargando = true;
+        // Primero una de cada cuatro, para que el giro funcione enseguida; luego el resto.
+        const orden = [...Array(N).keys()].sort((a, b) => (a % 4 === 0 ? 0 : 1) - (b % 4 === 0 ? 0 : 1));
+        orden.forEach((k) => {
+          const img = new Image();
+          img.src = ruta(k);
+          img.decode().then(() => { cuadros[k] = img; pintar3d(Math.round(actual)); }).catch(() => {});
+        });
+      };
+      new IntersectionObserver((l, o) => {
+        if (l.some((e) => e.isIntersecting)) { cargarCuadros(); o.disconnect(); }
+      }, { rootMargin: "1200px 0px" }).observe(defensa);
+
+      // El ángulo se mide en vistas. El scroll fija una base (vuelta y media en toda la
+      // sección); el arrastre suma encima con inercia, y el ángulo mostrado alcanza al
+      // objetivo con una interpolación, así nunca salta.
+      let actual = 0, arrastre = 0, velocidad = 0, enEscena = false, raf = 0;
+      let agarrando = false, ultimoX = 0, ultimoT = 0;
+      const base = () => {
+        if (reducido) return 0;
+        const r = defensa.getBoundingClientRect();
+        const t = Math.min(1, Math.max(0, -r.top / (r.height - innerHeight)));
+        return t * N * 1.5;
+      };
+      const paso = () => {
+        raf = 0;
+        if (!agarrando) { arrastre += velocidad; velocidad *= 0.94; if (Math.abs(velocidad) < 0.01) velocidad = 0; }
+        const objetivo = base() + arrastre;
+        actual += (objetivo - actual) * (reducido ? 1 : 0.14);
+        pintar3d(((Math.round(actual) % N) + N) % N);
+        if (enEscena && (Math.abs(objetivo - actual) > 0.02 || velocidad || agarrando)) raf = requestAnimationFrame(paso);
+      };
+      const despertar = () => { if (!raf) raf = requestAnimationFrame(paso); };
+      new IntersectionObserver((l) => { enEscena = l.some((e) => e.isIntersecting); if (enEscena) despertar(); }).observe(defensa);
+      addEventListener("scroll", () => enEscena && despertar(), { passive: true });
+
+      const VISTAS_POR_PX = 0.12; // unos 8 px de arrastre por vista
+      lienzo.addEventListener("pointerdown", (e) => {
+        agarrando = true; velocidad = 0; ultimoX = e.clientX; ultimoT = performance.now();
+        lienzo.setPointerCapture(e.pointerId); lienzo.classList.add("agarrando"); despertar();
+      });
+      lienzo.addEventListener("pointermove", (e) => {
+        if (!agarrando) return;
+        const dx = e.clientX - ultimoX, ahora = performance.now();
+        arrastre += dx * VISTAS_POR_PX;
+        velocidad = (dx * VISTAS_POR_PX) / Math.max(1, (ahora - ultimoT) / 16.7);
+        ultimoX = e.clientX; ultimoT = ahora;
+      });
+      const soltar = () => { agarrando = false; lienzo.classList.remove("agarrando"); despertar(); };
+      lienzo.addEventListener("pointerup", soltar);
+      lienzo.addEventListener("pointercancel", soltar);
+      lienzo.addEventListener("keydown", (e) => {
+        const d = e.key === "ArrowRight" ? 3 : e.key === "ArrowLeft" ? -3 : 0;
+        if (!d) return;
+        e.preventDefault(); arrastre += d; despertar();
+      });
+
+      const activar = (i: number) => {
+        frases.forEach((f, j) => f.classList.toggle("activa", j === i));
+        pruebas.forEach((p, j) => p.classList.toggle("activa", j === i));
+        $("detalle").textContent = textos[i] ?? "";
+      };
+      const verPaso = new IntersectionObserver(
+        (l) => l.forEach((e) => e.isIntersecting && activar(Number((e.target as HTMLElement).dataset.paso))),
+        { rootMargin: "-50% 0px -50% 0px" },
+      );
+      document.querySelectorAll(".marcador").forEach((m) => verPaso.observe(m));
+
+      // ---- Vitrina: elegir una pantalla cambia el objeto y el disco ---------------
+      const disco = $("disco");
+      const indice = Array.from(document.querySelectorAll<HTMLButtonElement>(".indice button"));
+      const capturas = Array.from(document.querySelectorAll<HTMLElement>(".pantalla"));
+      indice.forEach((b) =>
+        b.addEventListener("click", () => {
+          indice.forEach((o) => o.setAttribute("aria-pressed", String(o === b)));
+          capturas.forEach((c) => c.classList.toggle("activa", c.dataset.id === b.dataset.id));
+          disco.className = `disco ${b.dataset.disco}`;
+          $("dato").textContent = b.dataset.dato ?? "";
+        }),
+      );
+    </script>
+  </body>
+</html>

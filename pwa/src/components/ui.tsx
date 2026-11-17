@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { NavLink, useNavigate } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { goBack } from "../lib/flow";
 
 /* ---------- Icons: one stroke set, so no screen invents its own ---------- */
 
@@ -48,6 +49,10 @@ export function Icon({ name, size = 22 }: { name: string; size?: number }) {
 export function Logo({ size = 88 }: { size?: number }) {
   return <img src="/ruma-logo.svg" width={size} height={size} alt="Ruma" />;
 }
+/** Rumi, the assistant (the bottle robot), cropped to a circle. */
+export function RumiAvatar({ size = 40 }: { size?: number }) {
+  return <img className="rumi-avatar" src="/rumi/rumi.webp" width={size} height={size} alt="" />;
+}
 export function LogoPlate({ plate = 112 }: { plate?: number }) {
   return <div className="glass" style={{ width: plate, height: plate, borderRadius: plate * 0.25, display: "grid", placeItems: "center", margin: "0 auto", flex: "none" }}><Logo size={Math.round(plate * 0.76)} /></div>;
 }
@@ -68,8 +73,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 }
 
 export const Loading = ({ text }: { text?: string }) => <div className="state" role="status"><div className="spinner" />{text && <p>{text}</p>}</div>;
-export const Empty = ({ title, text, icon = "box" }: { title: string; text?: string; icon?: string }) => (
-  <div className="state"><div className="badge" style={{ width: 56, height: 56, borderRadius: 16 }}><Icon name={icon} size={26} /></div><p className="t-card" style={{ color: "var(--ink)" }}>{title}</p>{text && <p>{text}</p>}</div>
+/** An empty list says what is missing and, with `action`, offers the one step that fills it. */
+export const Empty = ({ title, text, icon = "box", action }: { title: string; text?: string; icon?: string; action?: { label: string; icon?: string; onClick: () => void } }) => (
+  <div className="state"><div className="badge" style={{ width: 56, height: 56, borderRadius: 16 }}><Icon name={icon} size={26} /></div><p className="t-card" style={{ color: "var(--ink)" }}>{title}</p>{text && <p>{text}</p>}
+    {action && <button className="btn btn-primary btn-small" onClick={action.onClick}>{action.icon && <Icon name={action.icon} size={18} />}{action.label}</button>}</div>
+);
+/** Placeholder blocks in the shape of what is loading, so the screen does not jump when the data lands. */
+export const Skeleton = ({ blocks, label = "Cargando…" }: { blocks: number[]; label?: string }) => (
+  <div className="stack" style={{ gap: 16 }} role="status" aria-label={label}>{blocks.map((h, i) => <div key={i} className="skel" style={{ height: h }} />)}</div>
 );
 export const Failure = ({ text, retry }: { text: string; retry?: () => void }) => (
   <div className="state"><p>{text}</p>{retry && <button className="btn btn-secondary btn-small" onClick={retry}>Reintentar</button>}</div>
@@ -81,7 +92,7 @@ export function TopBar({ title, sub, right, back = true }: { title: string; sub?
   const nav = useNavigate();
   return (
     <header className="topbar">
-      {back && <button className="icon-btn" aria-label="Volver" onClick={() => nav(-1)}><Icon name="back" /></button>}
+      {back && <button className="icon-btn" aria-label="Volver" onClick={() => goBack(nav)}><Icon name="back" /></button>}
       <div className="min0"><h1 className={back ? "t-card" : "t-title"}>{title}</h1>{sub && <p className="muted t-small">{sub}</p>}</div>
       {right}
     </header>
@@ -99,11 +110,25 @@ export function TabBar({ tabs }: { tabs: Tab[] }) {
 
 export function NavRow({ icon, title, sub, onClick, right }: { icon?: string; title: string; sub?: string; onClick?: () => void; right?: ReactNode }) {
   const body = <>
-    {icon && <span className="badge"><Icon name={icon} /></span>}
+    {icon === "rumi" ? <RumiAvatar /> : icon && <span className="badge"><Icon name={icon} /></span>}
     <span className="min0"><span className="t-row" style={{ display: "block" }}>{title}</span>{sub && <span className="muted t-small" style={{ display: "block" }}>{sub}</span>}</span>
     {right}{onClick && <span className="chevron"><Icon name="chevron" size={18} /></span>}
   </>;
   return onClick ? <button onClick={onClick}>{body}</button> : <div>{body}</div>;
+}
+
+/** Circles joined by dashed lines: done steps carry a check, the current one a ring. current = steps.length marks all done. */
+export function StepDots({ steps, current, label }: { steps: [string, string?][]; current: number; label: string }) {
+  return (
+    <ol className="pay-steps" aria-label={label}>
+      {steps.map(([a, b], i) => (
+        <li key={a} className={i < current ? "done" : i === current ? "now" : ""}>
+          <span className="pay-dot" aria-hidden="true">{i < current ? <Icon name="check" size={16} /> : i + 1}</span>
+          <span className="pay-label"><b>{a}</b>{b && <><br />{b}</>}</span>
+        </li>
+      ))}
+    </ol>
+  );
 }
 
 export const Metric = ({ value, label }: { value: string; label: string }) => (
@@ -116,6 +141,19 @@ export function Stepper({ value, onChange, label }: { value: number; onChange: (
       <button aria-label={`Quitar uno de ${label}`} onClick={() => onChange(Math.max(0, value - 1))}>−</button>
       <span aria-live="polite">{value}</span>
       <button aria-label={`Sumar uno a ${label}`} onClick={() => onChange(value + 1)}>+</button>
+    </div>
+  );
+}
+
+/** States the bonus rule and the units so far against the next level; the database prices. */
+export function PointsRule({ units }: { units: number }) {
+  const next = units < 30 ? 30 : 80;
+  const note = units < 30 ? "para +10 %" : units < 80 ? "para +20 %" : "nivel máximo: +20 %";
+  return (
+    <div className="glass pad stack">
+      <p className="t-small">Cada botella limpia = 10 pts · Junta 30 o más: +10 % · 80 o más: +20 %</p>
+      <div className="track"><i style={{ width: `${Math.min(100, (units / next) * 100)}%` }} /></div>
+      <p className="muted t-small">{units} de {next} unidades · {note}</p>
     </div>
   );
 }
@@ -141,9 +179,10 @@ export function Bars({ data }: { data: { label: string; value: number; text?: st
 
 /* ---------- Map: Leaflet over OSM, no key ---------- */
 
-export type MapPin = { lat: number; lng: number; label?: string; color?: string; current?: boolean };
+export type MapPin = { lat: number; lng: number; label?: string; color?: string; current?: boolean; selected?: boolean };
 
-export function RumaMap({ pins, path, full, followFirst, recenter = 0 }: { pins: MapPin[]; path?: [number, number][]; full?: boolean; followFirst?: boolean; recenter?: number }) {
+/** `focus` flies the map to a point (a tapped card); null leaves the framing alone. */
+export function RumaMap({ pins, path, full, followFirst, recenter = 0, focus = null }: { pins: MapPin[]; path?: [number, number][]; full?: boolean; followFirst?: boolean; recenter?: number; focus?: { lat: number; lng: number } | null }) {
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
@@ -176,12 +215,12 @@ export function RumaMap({ pins, path, full, followFirst, recenter = 0 }: { pins:
     }
     for (const p of pins) {
       const node = document.createElement("div");
-      node.className = p.current ? "pin pin-current" : "pin";
+      node.className = p.current ? "pin pin-current" : p.selected ? "pin pin-selected" : "pin";
       node.style.background = p.color ?? accent;
       node.textContent = p.current ? "" : p.label && p.label.length <= 3 ? p.label : "•";
       const icon = L.divIcon({ className: "map-marker", iconSize: [34, 34], iconAnchor: [17, 17], html: node });
       const tooltip = document.createElement("span"); tooltip.textContent = p.label ?? "Destino";
-      L.marker([p.lat, p.lng], { icon, title: p.label ?? "Destino", alt: p.label ?? "Destino", keyboard: true }).bindTooltip(tooltip).addTo(g);
+      L.marker([p.lat, p.lng], { icon, title: p.label ?? "Destino", alt: p.label ?? "Destino", keyboard: true, zIndexOffset: p.selected ? 1000 : 0 }).bindTooltip(tooltip).addTo(g);
     }
     const pts: [number, number][] = [...pins.map((p) => [p.lat, p.lng] as [number, number]), ...(path ?? [])];
     if (centered.current !== recenter) { following.current = true; centered.current = recenter; framed.current = false; }
@@ -200,5 +239,13 @@ export function RumaMap({ pins, path, full, followFirst, recenter = 0 }: { pins:
     return () => clearTimeout(resize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, recenter, followFirst]);
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !focus) return;
+    framed.current = true; // the pins effect must not re-frame over the chosen point
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (still) m.setView([focus.lat, focus.lng], 16); else m.flyTo([focus.lat, focus.lng], 16, { duration: 0.6 });
+    el.current?.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "nearest" });
+  }, [focus?.lat, focus?.lng]);
   return <div ref={el} className={`map ${full ? "map-full" : ""}`} />;
 }

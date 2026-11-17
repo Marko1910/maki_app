@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="Ruma">
+  <!-- Logo de Ruma: la botella delante y la ruma de cartón detrás, una pila a cada lado.
+       Redibujado a partir de la captura del logo elegido. -->
+  <g fill="#3A7A68">
+    <rect x="4.2" y="21.2" width="11" height="22.6" rx="1.2" transform="rotate(-4 9.7 32.5)"/>
+    <rect x="32.4" y="20.4" width="11" height="21.6" rx="1.2" transform="rotate(4 37.9 31.2)"/>
+  </g>
+  <g fill="#2B6656">
+    <rect x="4.6" y="19.8" width="11" height="23.8" rx="1.2"/>
+    <rect x="31.9" y="19.4" width="11.2" height="22.4" rx="1.2"/>
+  </g>
+  <rect x="20" y="4" width="7.1" height="4.6" rx="1" fill="#33AE86"/>
+  <path d="M21.4 8.4 V13.6 C21.4 16.2 17.4 16.6 17.4 20.4 V41.8 Q17.4 44 19.6 44 H28 Q30.2 44 30.2 41.8 V20.4 C30.2 16.6 25.8 16.2 25.8 13.6 V8.4 Z" fill="#33AE86"/>
+  <rect x="19.5" y="20.6" width="1.3" height="20.4" rx="0.65" fill="#8DEBCB"/>
+</svg>

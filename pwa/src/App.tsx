@@ -4,10 +4,15 @@ import { Failure, Loading, TabBar, ToastProvider, useToast, type Tab } from "./c
 import { humanize, loadMyRole, publishRiderLocation, sb, signOut } from "./lib/api";
 import { IS_STAGING } from "./lib/config";
 import { useWakeLock } from "./lib/util";
+import { usePush } from "./components/Push";
+import { useTransitionLocation } from "./lib/flow";
 import { Login, Onboarding, Register, RoleSelect, Splash } from "./screens/auth/Auth";
 import { Camera, Result, ScanProvider } from "./screens/family/Scan";
-import { Centers, FamilyHistory, FamilyProfile, Home, Rankings, Wallet } from "./screens/family/Family";
-import { PickupForm, Tracking } from "./screens/family/Pickup";
+import { FamilyHistory, FamilyProfile, Home, Rankings, Wallet } from "./screens/family/Family";
+import { Centers } from "./screens/family/Centers";
+import { MyPickups, PickupForm, Tracking } from "./screens/family/Pickup";
+import { Invite } from "./screens/family/Invite";
+import { Plans } from "./screens/family/Plans";
 import { Chat } from "./screens/family/Chat";
 import { EditProfile, Market, Notifications } from "./screens/shared/Shared";
 import { Board, Completed, Confirm, Dashboard, Navigation, RiderProvider, RouteScreen, useRider } from "./screens/rider/Work";
@@ -97,7 +102,7 @@ function RiderShell() {
     );
     return () => navigator.geolocation.clearWatch(id);
   }, []);
-  useEffect(() => { if (denied) toast("Sin permiso de ubicación: la familia no podrá ver dónde estás."); }, [denied, toast]);
+  useEffect(() => { if (denied) toast("Sin permiso de ubicación: el recolector no podrá ver dónde estás."); }, [denied, toast]);
   return <Outlet />;
 }
 
@@ -128,7 +133,10 @@ function SignedOutOnly({ auth }: { auth: Auth }) {
 
 export function App() {
   const auth = useAuth();
+  // Routes draw this lagging copy so screen changes can run as a View Transition (lib/flow.ts).
+  const shown = useTransitionLocation();
   const isRider = !!auth && auth.role === "eco_rider";
+  usePush(!!auth && !auth.failed);
   useEffect(() => {
     // Unhandled failures would otherwise be silent on a phone with no console.
     const onError = (e: PromiseRejectionEvent) => console.error(humanize(e.reason));
@@ -146,7 +154,7 @@ export function App() {
     <div className="app" data-role={isRider ? "rider" : "family"}>
       {IS_STAGING && <div className="env-tag">Staging · datos de prueba</div>}
       <ToastProvider>
-        <Routes>
+        <Routes location={shown}>
           <Route path="/" element={<Entry auth={auth} />} />
           <Route element={<SignedOutOnly auth={auth} />}>
             <Route path="/bienvenida" element={<Onboarding />} />
@@ -166,10 +174,13 @@ export function App() {
               <Route path="/f/resultado" element={<Result />} />
               <Route path="/f/recojo" element={<PickupForm />} />
               <Route path="/f/seguimiento" element={<Tracking />} />
+              <Route path="/f/recojos" element={<MyPickups />} />
               <Route path="/f/wallet" element={<Wallet />} />
               <Route path="/f/historial" element={<FamilyHistory />} />
               <Route path="/f/acopios" element={<Centers />} />
               <Route path="/f/ranking" element={<Rankings />} />
+              <Route path="/f/invita" element={<Invite />} />
+              <Route path="/f/planes" element={<Plans />} />
               <Route path="/f/chat" element={<Chat />} />
               <Route path="/f/notificaciones" element={<Notifications />} />
               <Route path="/f/editar" element={<EditProfile />} />

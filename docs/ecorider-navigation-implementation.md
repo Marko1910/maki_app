@@ -76,7 +76,7 @@ deshabilita sin posición. No se registraron excepciones AndroidRuntime durante
 esta ejecución.
 
 ```powershell
-adb shell am instrument -w -e class com.example.maki.RiderNavigationDeviceTest com.example.maki.test/androidx.test.runner.AndroidJUnitRunner
+adb shell am instrument -w -e class pe.ruma.app.RiderNavigationDeviceTest pe.ruma.app.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 `RiderHardwareServicesTest` comprueba por separado GPS real y síntesis de voz;
@@ -85,7 +85,7 @@ Reproduce una frase audible; no guarda ni envía la posición a un backend.
 
 La primera ejecución de servicios pasó voz pero no obtuvo posición en 8 segundos,
 con permiso preciso y ubicación del sistema activos. Se encontró que navegación
-esperaba exclusivamente al proveedor satelital. Se corrigió `MakiLocation` para
+esperaba exclusivamente al proveedor satelital. Se corrigió `RumaLocation` para
 solicitar GPS y red simultáneamente, aceptar la primera posición de ≤60 m y ≤15 s,
 y retirar todos los listeners al terminar/cancelar. Un caché reciente pero impreciso
 ya no impide buscar una posición mejor. Referencia API:
