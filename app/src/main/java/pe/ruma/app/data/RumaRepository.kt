@@ -573,9 +573,13 @@ object RumaRepository {
         return pickupId
     }
 
+    /** What the family saved over several scans and has not asked to collect yet, per material. */
+    suspend fun loadSavedPile(): List<SavedPileRowDto> =
+        RumaApi.json.decodeFromString(ListSerializer(SavedPileRowDto.serializer()), RumaApi.post("rpc/saved_pile", "{}"))
+
     /**
-     * Creates a pickup from the caller's latest pending detection (links it, copies its
-     * items, sets points server-side, moves the detection to 'scheduled'). Returns id.
+     * Creates one pickup for the whole saved pile: every pending scan of the last 30 days is
+     * linked to it and its items summed per material (server-side). Returns id.
      */
     suspend fun createPickupFromDetection(
         addressId: String?,

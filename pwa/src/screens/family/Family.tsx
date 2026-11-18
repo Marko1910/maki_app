@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Empty, Failure, Icon, Metric, NavRow, Skeleton, StepDots, TopBar, useToast } from "../../components/ui";
-import { ACTIVE, createRedemption, humanize, loadDetections, loadGeneratorProfile, loadScanDates, loadLeaderboardEntries, loadMyAchievements, loadNotifications, loadOpenPeriod, loadPickups, loadRankingRewards, loadRedemptionOptions, loadRedemptions, loadTrackedPickup, myId, signOut, loadPrimaryAddress, type Row } from "../../lib/api";
+import { ACTIVE, createRedemption, humanize, loadDetections, loadGeneratorProfile, loadScanDates, loadLeaderboardEntries, loadMyAchievements, loadNotifications, loadOpenPeriod, loadPickups, loadRankingRewards, loadRedemptionOptions, loadRedemptions, loadTrackedPickup, myId, signOut, loadPrimaryAddress, loadSavedPile, type Row } from "../../lib/api";
 import { ago, dayGroup, initials, int, kg, ptsToSoles, soles, STATUS, takeBalanceGain, useAsync, windowText } from "../../lib/util";
 import { GOAL_DAYS, monthDays, readGoal, rumaLevel, weekProgress, writeGoal, type WeekProgress } from "../../lib/week";
 import { nextStep, type NextStep } from "../../lib/nextStep";
 import { tick } from "../../lib/flow";
 import { useScan } from "./Scan";
+import { pileCounts, pileSummary } from "../../lib/pile";
 import { InvitePrompt } from "./Invite";
 
 /* ---------- Home ---------- */
@@ -16,13 +17,14 @@ export function Home() {
   const me = myId();
   const [goal] = useState(() => readGoal(me));
   const { data, loading, error, reload } = useAsync(async () => {
-    const [profile, notes, pickup, dates, options] = await Promise.all([
+    const [profile, notes, pickup, dates, options, pile] = await Promise.all([
       loadGeneratorProfile(), loadNotifications().catch(() => []), loadTrackedPickup().catch(() => null),
       // A failed read must not show as zero progress: null renders an honest "no pudimos".
       loadScanDates(new Date(Date.now() - WEEKS_BACK * 7 * 86400000)).catch(() => null),
       loadRedemptionOptions().catch(() => [] as Row[]),
+      loadSavedPile().catch(() => [] as Row[]),
     ]);
-    return { profile, notes, pickup, dates, options };
+    return { profile, notes, pickup, dates, options, pile };
   });
   const { scan } = useScan();
   // A pickup just asked for arrives here as router state (Pickup.tsx): a short "va en camino".
@@ -75,15 +77,16 @@ export function Home() {
       </button>}
       {dispatch && <button className="glass pad credited" onClick={() => nav("/f/seguimiento")} aria-label="Ver mi recojo">
         <span className="calm-check"><Icon name="bike" size={16} /></span>
-        <span className="min0"><span className="t-row" style={{ display: "block" }} role="status">{dispatch.rider ? `¡${dispatch.rider} va en camino!` : "¡Recojo pedido!"}</span>
-          <span className="muted t-small" style={{ display: "block" }}>{dispatch.rider ? `${dispatch.eta ? `Llega en ~${dispatch.eta} min. ` : ""}Ten listos tus materiales.` : "Buscamos al Eco-Rider más cercano. Te avisamos cuando lo tome."}</span></span>
+        <span className="min0"><span className="t-row" style={{ display: "block" }} role="status">{!dispatch.rider ? "¡Recojo pedido!" : dispatch.later ? `¡${dispatch.rider} tomó tu recojo!` : `¡${dispatch.rider} va en camino!`}</span>
+          <span className="muted t-small" style={{ display: "block" }}>{dispatch.rider ? `${dispatch.later ? `Pasará ${dispatch.later.toLowerCase()}. ` : dispatch.eta ? `Llega en ~${dispatch.eta} min. ` : ""}Ten listos tus materiales.` : "Buscamos al Eco-Rider más cercano. Te avisamos cuando lo tome."}</span></span>
         <Icon name="chevron" size={18} />
         <i className="credited-timer" aria-hidden="true" />
       </button>}
       <InvitePrompt joy={gain > 0 || week?.left === 0} />
       <NextStepCard step={nextStep({
-        live: live ? { title: liveTitle(live), sub: live.eta_minutes ? `Llega en ~${live.eta_minutes} min` : "Toca para ver el seguimiento", to: `/f/seguimiento?id=${live.id}` } : null,
-        unpickedScan: !!scan?.detectionId, balance: p?.points_balance ?? 0,
+        live: live ? { title: liveTitle(live), sub: live.status === "assigned" && live.window_label ? `Pasará ${String(live.window_label).toLowerCase()}` : live.eta_minutes ? `Llega en ~${live.eta_minutes} min` : "Toca para ver el seguimiento", to: `/f/seguimiento?id=${live.id}` } : null,
+        unpickedScan: !!scan?.detectionId || data.pile.length > 0,
+        saved: pileSummary(pileCounts(data.pile as never, scan as never), data.pile as never), balance: p?.points_balance ?? 0,
         cashMin: data.options.filter((o) => o.kind === "cash" && o.min_points > 0).reduce<number | null>((m, o) => (m == null ? o.min_points : Math.min(m, o.min_points)), null),
         weekDays: week?.days ?? null, weekLeft: week?.left ?? null,
       })} />
@@ -109,7 +112,7 @@ export function Home() {
 const WEEKS_BACK = 26;
 const CREDITED_MS = 7000;
 
-type Dispatch = { rider?: string | null; eta?: number | null };
+type Dispatch = { rider?: string | null; eta?: number | null; later?: string | null };
 const liveTitle = (live: Row) => !live.rider?.display_name ? STATUS[live.status] : live.status === "assigned" ? `${live.rider.display_name} tomó tu recojo` : `${live.rider.display_name} va en camino`;
 
 /**

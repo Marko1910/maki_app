@@ -1,0 +1,2 @@
+# Los scripts de bash deben quedar con LF: con CRLF Git Bash falla ($'': command not found).
+*.sh text eol=lf

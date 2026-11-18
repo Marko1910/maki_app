@@ -12,8 +12,10 @@ export type NextStep = { kind: NextKind; title: string; body: string; action: st
 export type NextInput = {
   /** Title/line of the pickup in flight, as the home already builds them; null with none. */
   live?: { title: string; sub: string; to: string } | null;
-  /** A scan saved this session that has no pickup yet. */
+  /** Scans with no pickup yet (the saved pile). */
   unpickedScan?: boolean;
+  /** What the saved pile holds, "7 botellas PET guardadas"; null when unknown. */
+  saved?: string | null;
   balance?: number;
   /** min_points of the cheapest active cash option (Yape/Plin); null when unknown. */
   cashMin?: number | null;
@@ -28,9 +30,9 @@ const soles = (pts: number) => `S/${(pts / 1000).toFixed(2)}`;
 const int = (n: number) => n.toLocaleString("en-US");
 const CAMERA = "/f/camara";
 
-export function nextStep({ live, unpickedScan, balance = 0, cashMin, weekDays, weekLeft }: NextInput): NextStep {
+export function nextStep({ live, unpickedScan, saved, balance = 0, cashMin, weekDays, weekLeft }: NextInput): NextStep {
   if (live) return { kind: "live", title: live.title, body: live.sub, action: "Ver mi recojo", to: live.to };
-  if (unpickedScan) return { kind: "pickup", title: "Pide tu recojo", body: "Tu escaneo quedó guardado. Elige la hora y un Eco-Rider pasa por tus residuos.", action: "Pedir recojo", to: "/f/recojo" };
+  if (unpickedScan) return { kind: "pickup", title: saved ? `Tienes ${saved}` : "Pide tu recojo", body: "Puedes seguir juntando: cada escaneo se suma. Cuando quieras, pide un solo recojo para todo.", action: "Pedir recojo", to: "/f/recojo" };
   if (cashMin && cashMin > 0 && balance >= cashMin) return { kind: "cash", title: "Ya puedes cobrar", body: `Tienes ${soles(balance)} disponibles para canjear por Yape o Plin.`, action: "Ver mi wallet", to: "/f/wallet" };
   if (weekDays === 0) return { kind: "start-week", title: "Registra tus residuos", body: "Una foto de lo que ya juntaste y tu semana arranca.", action: "Registrar residuos", to: CAMERA };
   if (weekLeft === 1) return { kind: "near-goal", title: "Te falta 1 día para tu meta", body: "Registra lo que juntaste hoy y completas tu semana.", action: "Registrar residuos", to: CAMERA };

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -20,8 +22,8 @@ android {
         applicationId = "pe.ruma.app"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -29,8 +31,25 @@ android {
         // the detect-material Edge Function (server-authoritative scan + anti-spoof).
     }
 
+    // Release key lives OUTSIDE the repo (../keys, see its LEEME.txt). Without it the release build
+    // still assembles, unsigned; never commit the .jks or its .properties.
+    val releaseKeyFile = rootDir.parentFile.resolve("keys/ruma-release.properties")
+    signingConfigs {
+        if (releaseKeyFile.exists()) {
+            val props = Properties()
+            releaseKeyFile.reader().use { props.load(it) }
+            create("release") {
+                storeFile = releaseKeyFile.parentFile.resolve(props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

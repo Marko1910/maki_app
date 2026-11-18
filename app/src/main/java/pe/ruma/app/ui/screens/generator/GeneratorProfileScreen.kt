@@ -90,6 +90,8 @@ fun GeneratorProfileScreen(
     onEditProfile: () -> Unit = {},
     goal: Int = 1,
     onGoalChange: (Int) -> Unit = {},
+    /** The primary address; blank hides the line rather than showing someone else's. */
+    address: String = "",
 ) {
     Column(
         Modifier.fillMaxSize().rumaScreen().statusBarsPadding()
@@ -122,7 +124,7 @@ fun GeneratorProfileScreen(
             }
         }
 
-        Identidad(state)
+        Identidad(state, address)
 
         SectionLabel("TU CUENTA EN NÚMEROS")
         MetricRow {
@@ -216,7 +218,7 @@ fun GeneratorProfileScreen(
 }
 
 @Composable
-private fun Identidad(state: GeneratorUiState) {
+private fun Identidad(state: GeneratorUiState, address: String) {
     Column(
         Modifier.rumaHero(RumaGradient.gen, glow = RumaGradient.glowOf(RumaColors.Gen))
             .fillMaxWidth().padding(RumaSpace.xl),
@@ -230,7 +232,7 @@ private fun Identidad(state: GeneratorUiState) {
             Text(state.initials, color = RumaColors.OnDark, style = RumaType.metricLarge)
         }
         Text(state.displayName, color = RumaColors.OnDark, style = RumaType.metricLarge)
-        Row(
+        if (address.isNotBlank()) Row(
             horizontalArrangement = Arrangement.spacedBy(RumaSpace.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -238,7 +240,7 @@ private fun Identidad(state: GeneratorUiState) {
                 Icons.Outlined.Place, null,
                 tint = RumaColors.OnGenSoft, modifier = Modifier.size(14.dp),
             )
-            Text("Jr. Las Flores 123, SJL", color = RumaColors.OnGenSoft, style = RumaType.bodySmall)
+            Text(address, color = RumaColors.OnGenSoft, style = RumaType.bodySmall)
         }
     }
 }

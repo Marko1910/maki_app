@@ -12,4 +12,5 @@ const near = nextStep({ balance: 600, cashMin: 1000, weekDays: 1, weekLeft: 2 })
 assert.equal(near.kind, "near-cash");
 assert.equal(near.body, "Te faltan 400 pts para cobrar S/1.00.");
 assert.equal(nextStep({ balance: 0, cashMin: null, weekDays: null }).kind, "register");
+assert.equal(nextStep({ unpickedScan: true, saved: "7 botellas PET guardadas" }).title, "Tienes 7 botellas PET guardadas");
 console.log("check-next: ok");

@@ -5,7 +5,6 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import kotlin.math.abs
 import kotlin.math.sqrt
 
 /**
@@ -41,7 +40,7 @@ class LivenessSensors(context: Context) : SensorEventListener {
     // The strongest recent movement and when it happened (see MOTION_MEMORY_MS).
     @Volatile private var recentPeak = 0.0
     @Volatile private var recentPeakAt = 0L
-    private var lastAccelMag = Double.NaN
+    private var slow: FloatArray? = null
 
     fun start() {
         maxDps = 0.0; samples = 0; windowStart = System.currentTimeMillis()
@@ -67,12 +66,20 @@ class LivenessSensors(context: Context) : SensorEventListener {
             // |angular velocity| in rad/s -> deg/s.
             Math.toDegrees(sqrt(e.values[0].toDouble() * e.values[0] + e.values[1] * e.values[1] + e.values[2] * e.values[2]))
         } else {
-            // Change in |acceleration| between samples: ~0 lying still, a few m/s² while
-            // the phone is carried around. x10 puts a hand-held sweep over the same gate.
-            val mag = sqrt(e.values[0].toDouble() * e.values[0] + e.values[1] * e.values[1] + e.values[2] * e.values[2])
-            val delta = if (lastAccelMag.isNaN()) 0.0 else abs(mag - lastAccelMag)
-            lastAccelMag = mag
-            delta * 10.0
+            // How far the acceleration vector strays from its slow average (gravity). Tilting
+            // the phone moves gravity across the axes, so a gentle sweep around the waste
+            // reads several m/s² while a phone at rest stays near 0. |a| alone missed it:
+            // rotating doesn't change the magnitude, so on the gyro-less Galaxy A12 only a
+            // shake passed and every photo was rejected (2026-11-17). x10 maps ~5° onto the gate.
+            if (slow == null) slow = e.values.copyOf()
+            val g = slow!!
+            var d2 = 0.0
+            for (i in 0..2) {
+                g[i] += 0.1f * (e.values[i] - g[i])
+                val d = (e.values[i] - g[i]).toDouble()
+                d2 += d * d
+            }
+            sqrt(d2) * 10.0
         }
         if (dps > maxDps) maxDps = dps
         val now = System.currentTimeMillis()

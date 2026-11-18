@@ -587,9 +587,11 @@ Deno.serve(async (req: Request) => {
     const { data: materials } = await admin
       .from("materials").select("id,code,name,points_per_unit").eq("is_active", true);
     const byCode = new Map((materials ?? []).map((m: any) => [m.code, m]));
-    const pointsFor = (code: string, qty: number, quality: number) =>
-      // quality scales the award 50%..100% — dirty/crushed items earn less, like an RVM grade.
-      Math.round(qty * Number(byCode.get(code)?.points_per_unit ?? 0) * (0.5 + 0.5 * quality));
+    // The estimate follows the published rule ("cada botella limpia = 10 pts"): the condition is the
+    // rider's call at the door and settle_delivery applies its factor. Scaling by the AI's quality guess
+    // showed "≈ 17 pts" for two bottles (2026-11-17). quality stays signed and stored for the dataset.
+    const pointsFor = (code: string, qty: number, _quality: number) =>
+      Math.round(qty * Number(byCode.get(code)?.points_per_unit ?? 0));
 
     // ---- commit: close the session from the signed frames -----------------
     if (payload.mode === "commit") {

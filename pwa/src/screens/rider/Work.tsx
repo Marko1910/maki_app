@@ -458,7 +458,7 @@ export function Confirm() {
       {items.length ? <div className="glass list">
         {items.map((i) => <div key={i.materials?.id} style={{ flexWrap: "wrap" }}>
           <span className="badge">{(i.materials?.code ?? "").slice(0, 3)}</span>
-          <span className="min0"><span className="t-row" style={{ display: "block" }}>{i.materials?.name}</span><span className="muted t-small">El recolector declaró {i.reported_quantity}</span></span>
+          <span className="min0"><span className="t-row" style={{ display: "block" }}>{i.materials?.name}</span><span className="muted t-small">La familia declaró {i.reported_quantity}</span></span>
           <Stepper value={counts[i.materials?.id] ?? 0} label={i.materials?.name ?? "material"} onChange={(n) => setCounts({ ...counts, [i.materials.id]: n })} />
           <div className="chips" role="radiogroup" aria-label={`Estado de ${i.materials?.name ?? "material"}`} style={{ flexBasis: "100%" }}>
             {([["limpia", "Limpia"], ["aplastada", "Aplastada"], ["sucia", "Con líquido o sucia"]] as const).map(([k, label]) => <button key={k} role="radio" aria-checked={(conds[i.materials?.id] ?? "limpia") === k} aria-pressed={(conds[i.materials?.id] ?? "limpia") === k} className="glass filter" onClick={() => setConds({ ...conds, [i.materials.id]: k })}>{label}</button>)}
@@ -494,7 +494,7 @@ export function Completed() {
       <section className="hero"><p className="t-over">Ganancia estimada</p><p className="t-hero">≈ {soles(c.earnings)}</p><p className="soft t-small">Se paga al pesar</p></section>
       <section className="glass pad stack"><h2 className="t-row">Resumen del recojo</h2>
         <div className="between"><span className="muted">Materiales</span><span className="t-row">{c.units} unidades</span></div>
-        <div className="between"><span className="muted">Puntos del recolector</span><span className="t-row">Se acreditan en el acopio</span></div>
+        <div className="between"><span className="muted">Puntos para la familia</span><span className="t-row">Se acreditan en el acopio</span></div>
       </section>
       <p className="glass pad row"><Icon name="route" /> {left === 0 ? "No te quedan paradas por ahora" : left === 1 ? "Te queda 1 parada en tu ruta" : `Te quedan ${left} paradas en tu ruta`}</p>
       <div className="grow" />

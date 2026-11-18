@@ -215,6 +215,9 @@ export const loadScanDates = async (since: Date) =>
   (await q(sb.from("detections").select("detected_at").eq("generator_id", await need()).gte("detected_at", since.toISOString()))).map((r: Row) => new Date(r.detected_at));
 export const loadDetections = async (limit = 20) => q(sb.from("detections").select("status,total_points,total_value,total_weight_kg,detected_at,detection_items(quantity,confidence,quality_score,points,materials(id,name,code,icon))").eq("generator_id", await need()).order("detected_at", { ascending: false }).limit(limit));
 
+/** What the family saved over several scans with no pickup yet (last 30 days), per material. */
+export const loadSavedPile = async (): Promise<Row[]> => (await q(sb.rpc("saved_pile"))) ?? [];
+
 export type At = { lat: number; lng: number } | null;
 
 export async function createPickup(addressId: string | null, scheduledDate: string, windowLabel: string, items: [string, number][], at: At) {
@@ -224,7 +227,7 @@ export async function createPickup(addressId: string | null, scheduledDate: stri
   if (lines.length) await q(sb.from("pickup_items").insert(lines));
   return pickupId;
 }
-/** Links the verified scan so its points settle on collection. */
+/** One pickup for the whole saved pile: links every pending scan of the last 30 days and sums its items. */
 export async function createPickupFromDetection(addressId: string | null, scheduledDate: string, windowLabel: string, at: At) {
   const id = await q<string | null>(sb.rpc("create_pickup_from_detection", { p_address_id: addressId, p_scheduled_date: scheduledDate, p_window_label: windowLabel, p_latitude: at?.lat ?? null, p_longitude: at?.lng ?? null }));
   return id || null;

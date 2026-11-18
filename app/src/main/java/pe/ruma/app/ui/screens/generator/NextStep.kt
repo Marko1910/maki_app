@@ -28,8 +28,10 @@ fun nextStep(
     /** Title/line of the pickup in flight, as the home already builds them; null with none. */
     liveTitle: String?,
     liveLine: String = "",
-    /** A scan saved this session that has no pickup yet. */
+    /** Scans with no pickup yet (the saved pile). */
     unpickedScan: Boolean = false,
+    /** What the saved pile holds, "7 botellas PET guardadas"; null when unknown. */
+    saved: String? = null,
     balance: Int = 0,
     /** min_points of the cheapest active cash option (Yape/Plin); null when unknown. */
     cashMin: Int? = null,
@@ -39,8 +41,8 @@ fun nextStep(
 ): NextStep = when {
     liveTitle != null -> NextStep(NextStep.Kind.LIVE, liveTitle, liveLine, "Ver mi recojo", GenRoutes.TRACKING)
     unpickedScan -> NextStep(
-        NextStep.Kind.PICKUP, "Pide tu recojo",
-        "Tu escaneo quedó guardado. Elige la hora y un Eco-Rider pasa por tus residuos.",
+        NextStep.Kind.PICKUP, saved?.let { "Tienes $it" } ?: "Pide tu recojo",
+        "Puedes seguir juntando: cada escaneo se suma. Cuando quieras, pide un solo recojo para todo.",
         "Pedir recojo", GenRoutes.PICKUP,
     )
     cashMin != null && cashMin > 0 && balance >= cashMin -> NextStep(

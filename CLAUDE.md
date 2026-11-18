@@ -86,6 +86,11 @@ header when you replay it.
   `GeneratorViewModel.kt` and are imported from there.
 - **Background work** is WorkManager in `data/`: `EcoTipsWorker` (daily eco notification, enqueued
   in `MainActivity`) and `RiderShiftWorker` (turns the rider available at their booked shift hour).
+- **Updates outside the Play Store**: `data/AppUpdater.kt` + `ui/components/UpdatePrompt.kt` read this public repo's
+  GitHub Releases on launch, pick the highest `android-v<versionCode>` above `BuildConfig.VERSION_CODE`, download its
+  `.apk` and open Android's installer (FileProvider `${applicationId}.updates`). Publish one with
+  `scripts/release-android.sh "notas"`, which bumps `versionCode`, builds the signed release (key in `../keys`, outside
+  the repo — a different key means testers must uninstall) and runs `gh release create`. Release notes are what testers read.
 - **`navigation/`** — a two-tier NavHost. `AppRoot` runs splash → onboarding → login → role →
   register, then hosts `GeneratorRoot` or `RiderRoot`; each of those is its own NavHost + Scaffold
   and places the shared nav bar once. Route constants live in `AppRoutes` / `GenRoutes` /
@@ -164,6 +169,13 @@ into `redemptions`; DB triggers validate the balance and post the ledger. Since 
 and `kind`, `monetary_value`, `status` and the payout fields are set by the database whatever the client sends. Keep new money/points paths
 on this shape: the client asks, the database decides.
 
+**Tu ruma guardada** (since 2026-11-18, `supabase/sql/2026-11-18_ruma_guardada.sql`, STAGING only, check with
+`supabase/tests/ruma_guardada_staging.sql`, which rolls itself back): every `pending` scan of the last 30 days with no
+pickup is the family's saved pile (`rpc/saved_pile`). `create_pickup_from_detection` books the whole pile into one pickup
+(items summed per material, each scan linked by `detections.pickup_id`); a cancelled/failed pickup gives its scans back;
+the IA-vs-rider sample sums every scan of the pickup and flags mixed provenance. Clients: `savedPile`/`savedSummary` in
+`GeneratorViewModel`, `pwa/src/lib/pile.ts` (`node scripts/check-pile.ts`).
+
 The rider opens that delivery from "Entregar en acopio" through **rpc/create_delivery**, which
 validates ownership and `completed` status while holding the pickups locked; direct INSERT on
 `deliveries` / `delivery_pickups` is revoked, and `settle_delivery` now refuses a batch with no
@@ -190,6 +202,10 @@ realtime — the rider heartbeats fresh fixes into `rider_profiles` every `LOCAT
 Street paths and the fastest stop order come from `data/StreetRouter` (OSRM on
 routing.openstreetmap.de, no key); `RoutePlanner` (nearest neighbour + 2-opt, crow-flies) is the
 offline fallback. Test accounts for every actor: see the seed in STAGING (`*@ruma.test`, `Maki12345!`).
+
+Rankings are live since 2026-11-17 (`supabase/sql/2026-11-17_ranking_semanal.sql`, STAGING only): cron `ruma-leaderboards`
+runs `refresh_leaderboards()` every minute, which opens the current Lima week's board ("Cartavio") per role and ranks every
+active user by the points of the pickups completed that week (bonuses and referrals don't count). Both apps just read it.
 
 Routing investigation and implementation phases: `docs/ecorider-routing-research.md`.
 Public endpoint probes passed on 2026-11-03, including the exact open Trip parameters.

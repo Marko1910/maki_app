@@ -42,6 +42,8 @@ fun GeneratorResultScreen(
     onBack: () -> Unit = {},
     onPedirRecojo: () -> Unit = {},
     onOtraFoto: () -> Unit = {},
+    /** Keep these bottles at home and come back: the next scans add up to one pickup. */
+    onGuardar: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().rumaScreen().statusBarsPadding()) {
         DetailHeader("Residuos detectados", onBack)
@@ -116,7 +118,8 @@ fun GeneratorResultScreen(
                     }
                 }
                 item { SecondaryButton("Otra foto", Modifier.fillMaxWidth(), icon = Icons.Outlined.PhotoCamera, onClick = onOtraFoto) }
-                item { Text("¿Tienes más? Empieza un escaneo nuevo; este ya quedó guardado.", Modifier.fillMaxWidth(), style = RumaType.bodySmall, color = RumaColors.Text2, textAlign = TextAlign.Center) }
+                item { SecondaryButton("Guardar y seguir juntando", Modifier.fillMaxWidth(), icon = Icons.Filled.Inventory2, onClick = onGuardar) }
+                item { Text("¿Aún no quieres que pasen? Guárdalo: lo que escanees después se suma y pides un solo recojo cuando quieras.", Modifier.fillMaxWidth(), style = RumaType.bodySmall, color = RumaColors.Text2, textAlign = TextAlign.Center) }
             }
         }
         if (result != null) PrimaryButton("Pedir recojo", Modifier.fillMaxWidth().padding(RumaSpace.gutter), onClick = onPedirRecojo)

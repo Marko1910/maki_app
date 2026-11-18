@@ -58,8 +58,8 @@ data class RiderConfirmUiState(
     val address: String = "Jr. Las Flores 123",
     val streak: String = "Hoy 3:00 - 6:00 pm",
     val materials: List<ConfirmMaterialUi> = listOf(
-        ConfirmMaterialUi("Plástico PET", "El recolector declaró 8", "+80 pts", "pet", 8, 8, "PET"),
-        ConfirmMaterialUi("Latas de aluminio", "El recolector declaró 3", "+18 pts", "alu", 3, 2, "ALU"),
+        ConfirmMaterialUi("Plástico PET", "La familia declaró 8", "+80 pts", "pet", 8, 8, "PET"),
+        ConfirmMaterialUi("Latas de aluminio", "La familia declaró 3", "+18 pts", "alu", 3, 2, "ALU"),
     ),
     val totalWeight: String = "—",
     val totalPoints: String = "98 pts",

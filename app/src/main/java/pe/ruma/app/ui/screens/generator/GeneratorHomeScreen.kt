@@ -133,9 +133,14 @@ fun GeneratorHomeScreen(
             else -> {
                 if (dispatch != null) item(key = "dispatch") {
                     CelebrationBanner(
-                        title = if (dispatch.searching) "¡Recojo pedido!" else "¡${dispatch.riderName} va en camino!",
+                        title = when {
+                            dispatch.searching -> "¡Recojo pedido!"
+                            dispatch.later != null -> "¡${dispatch.riderName} tomó tu recojo!"
+                            else -> "¡${dispatch.riderName} va en camino!"
+                        },
                         body = if (dispatch.searching) "Buscamos al Eco-Rider más cercano. Te avisamos cuando lo tome."
-                        else (dispatch.etaMinutes?.let { "Llega en ~$it min. " } ?: "") + "Ten listos tus materiales.",
+                        else (dispatch.later?.let { "Pasará ${it.lowercase()}. " }
+                            ?: dispatch.etaMinutes?.let { "Llega en ~$it min. " } ?: "") + "Ten listos tus materiales.",
                         clickLabel = "Ver mi recojo", onTimeout = onDispatchSeen,
                     ) { onDispatchSeen(); onNavigate(GenRoutes.TRACKING) }
                 }

@@ -9,7 +9,8 @@ import { goBack, markFlowStart, tick } from "../../lib/flow";
 /* ---------- The scan the pickup form may link to ---------- */
 
 export type Box = { box: number[]; label: string };
-type Scan = { detectionId: string | null; items: Row[]; totalPoints: number; photo?: string; boxes?: Box[] };
+/** ai: what the AI counted per material id, so result-screen corrections carry into the saved pile. */
+type Scan = { detectionId: string | null; items: Row[]; totalPoints: number; photo?: string; boxes?: Box[]; ai?: Record<string, number> };
 const ScanCtx = createContext<{ scan: Scan | null; setScan: (s: Scan | null) => void }>({ scan: null, setScan: () => undefined });
 export const useScan = () => useContext(ScanCtx);
 export function ScanProvider({ children }: { children: ReactNode }) {
@@ -175,7 +176,7 @@ export function Camera() {
     try {
       const r = await commitScan(session.current, observations.current);
       if (r.rejected || !r.items?.length) { toast(r.message ?? "No se pudo verificar el escaneo. Intenta de nuevo."); setPhase("result"); return; }
-      setScan({ detectionId: r.detection_id ?? null, items: r.items, totalPoints: r.total_points ?? 0, ...lastShot.current });
+      setScan({ detectionId: r.detection_id ?? null, items: r.items, totalPoints: r.total_points ?? 0, ai: Object.fromEntries(r.items.map((i: Row) => [i.material_id, i.quantity])), ...lastShot.current });
       nav("/f/resultado", { replace: true });
     } catch (e) { toast(humanize(e)); setPhase("result"); }
   };
@@ -244,6 +245,7 @@ export function Camera() {
 
 export function Result() {
   const nav = useNavigate();
+  const toast = useToast();
   const { scan, setScan } = useScan();
   useEffect(() => { if (!scan) nav("/f/camara", { replace: true }); }, [scan, nav]);
   if (!scan) return null;
@@ -306,7 +308,8 @@ export function Result() {
         </div>
       </section>
       <button className="btn btn-secondary" onClick={() => { setScan(null); nav("/f/camara", { replace: true }); }}><Icon name="camera" /> Otra foto</button>
-      <p className="muted t-small center">¿Tienes más? Empieza un escaneo nuevo; este ya quedó guardado.</p>
+      <button className="btn btn-secondary" onClick={() => { toast("Guardado. Lo que escanees después se suma a tu ruma."); nav("/f", { replace: true }); }}><Icon name="recycle" /> Guardar y seguir juntando</button>
+      <p className="muted t-small center">¿Aún no quieres que pasen? Guárdalo: lo que escanees después se suma y pides un solo recojo cuando quieras.</p>
       <div className="bottombar"><div><button className="btn btn-primary" onClick={() => nav("/f/recojo")}>Pedir recojo <Icon name="arrow" /></button></div></div>
     </main>
   );

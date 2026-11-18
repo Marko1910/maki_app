@@ -13,6 +13,7 @@ import pe.ruma.app.data.EcoTipsWorker
 import pe.ruma.app.data.RumaPush
 import pe.ruma.app.data.NotificationHelper
 import pe.ruma.app.navigation.AppRoot
+import pe.ruma.app.ui.components.UpdatePrompt
 import pe.ruma.app.ui.theme.RumaTheme
 import java.util.concurrent.TimeUnit
 
@@ -35,6 +36,8 @@ class MainActivity : ComponentActivity() {
             RumaTheme {
                 // Splash → onboarding/login → role apps.
                 AppRoot()
+                // A newer APK on GitHub Releases → offer it (data/AppUpdater.kt).
+                UpdatePrompt()
             }
         }
     }

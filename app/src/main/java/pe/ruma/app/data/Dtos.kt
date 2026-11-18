@@ -756,3 +756,14 @@ data class RpcPlanCode(val p_plan: String)
 
 @Serializable
 data class RpcCancelPlan(val p_subscription_id: String)
+
+/** One material of the family's saved pile (rpc/saved_pile): scans with no pickup yet, last 30 days. */
+@Serializable
+data class SavedPileRowDto(
+    val material_id: String,
+    val code: String,
+    val name: String,
+    val quantity: Int,
+    val points: Int = 0,
+    val scans: Int = 0,
+)

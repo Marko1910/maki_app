@@ -205,7 +205,7 @@ fun GeneratorRoot(
                     onCreditedSeen = vm::creditedSeen,
                     nextStep = nextStep(
                         liveTitle = h.activeTitle, liveLine = h.activeLine,
-                        unpickedScan = vm.hasUnpickedScan,
+                        unpickedScan = vm.hasUnpickedScan, saved = vm.savedSummary,
                         balance = g.points, cashMin = vm.cashMin,
                         weekDays = vm.week?.days, weekLeft = vm.week?.left,
                     ),
@@ -252,6 +252,10 @@ fun GeneratorRoot(
                     onBack = { nav.popBackStack() },
                     onPedirRecojo = { nav.navigate(GenRoutes.PICKUP) },
                     onOtraFoto = { nav.navigate(GenRoutes.CAMERA) },
+                    onGuardar = {
+                        vm.notify("Guardado. Lo que escanees después se suma a tu ruma.")
+                        nav.switchTab(GenRoutes.HOME, GenRoutes.HOME)
+                    },
                 )
             }
             composable(GenRoutes.MARKET) {
@@ -268,8 +272,10 @@ fun GeneratorRoot(
             }
             composable(GenRoutes.CHAT) { GeneratorChatScreen(onBack = { nav.popBackStack() }, onInfo = { vm.notify(it) }) }
             composable(GenRoutes.PROFILE) {
+                LaunchedEffect(Unit) { vm.loadPickupForm() }
                 GeneratorProfileScreen(
                     state = vm.state,
+                    address = vm.pickupForm?.addressId?.let { vm.pickupForm?.addressLine }.orEmpty(),
                     onNavigate = { nav.navigate(it) },
                     onInfo = { vm.notify(it) },
                     onLogout = { confirmLogout = true },

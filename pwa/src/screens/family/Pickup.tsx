@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Empty, Failure, Icon, NavRow, Skeleton, RumaMap, StepDots, PointsRule, Stepper, TopBar, useToast, type MapPin } from "../../components/ui";
-import { ACTIVE, assignNearestRider, cancelPickup, createPickup, createPickupFromDetection, humanize, loadMaterials, loadPickups, loadPrimaryAddress, loadRiderPosition, loadRiderProfile, loadTrackedPickup, savePrimaryAddress, updateReportedQuantities, type Row } from "../../lib/api";
+import { ACTIVE, assignNearestRider, cancelPickup, createPickup, createPickupFromDetection, humanize, loadSavedPile, loadMaterials, loadPickups, loadPrimaryAddress, loadRiderPosition, loadRiderProfile, loadTrackedPickup, savePrimaryAddress, updateReportedQuantities, type Row } from "../../lib/api";
 import { ago, clock, distanceKm, here, initials, int, isoDate, meters, ptsToSoles, windowText, pickupLatLng, STATUS, streetRoute, useAsync, useInterval, VEHICLE, type LatLng, type RoadRoute } from "../../lib/util";
 import { DispatchScene, PinMap } from "../../components/Dispatch";
 import { PushCard } from "../../components/Push";
+import { pileCounts } from "../../lib/pile";
 import { useScan } from "./Scan";
 import { goBack, returnHome, tick } from "../../lib/flow";
 
@@ -23,8 +24,8 @@ export function PickupForm() {
   const toast = useToast();
   const { scan, setScan } = useScan();
   const { data, loading, error, reload } = useAsync(async () => {
-    const [address, materials] = await Promise.all([loadPrimaryAddress(), loadMaterials()]);
-    return { address, materials };
+    const [address, materials, pile] = await Promise.all([loadPrimaryAddress(), loadMaterials(), loadSavedPile().catch(() => [] as Row[])]);
+    return { address, materials, pile };
   });
   const [counts, setCounts] = useState<Record<string, number>>({});
   const windows = useMemo(openWindows, []);
@@ -40,13 +41,11 @@ export function PickupForm() {
   useEffect(() => {
     if (!data) return;
     setLine(data.address?.address_line ?? "");
-    // Scanned items travel as the starting counts; otherwise the family picks by hand.
-    const seed: Record<string, number> = {};
-    for (const it of scan?.items ?? []) if (it.material_id) seed[it.material_id] = it.quantity;
-    setCounts(seed);
+    // The whole saved pile (every scan with no pickup yet) is the starting count; otherwise the family picks by hand.
+    setCounts(pileCounts(data.pile as never, scan as never));
   }, [data, scan]);
 
-  const fromScan = !!scan?.detectionId;
+  const fromScan = !!scan?.detectionId || !!data?.pile.length;
   const materials: Row[] = data?.materials ?? [];
   const shown = fromScan ? materials.filter((m) => counts[m.id] != null) : materials;
   const options = windows.filter((w) => w.day === day);
@@ -79,7 +78,7 @@ export function PickupForm() {
       setScan(null);
       tick();
       // Home, with the pickup on the next-step card; "atrás" no longer reopens the form or the camera.
-      returnHome(nav, { dispatch: { rider: assigned ? (assigned.rider_name ?? "Un Eco-Rider") : null, eta: assigned?.eta_minutes ?? null } });
+      returnHome(nav, { dispatch: { rider: assigned ? (assigned.rider_name ?? "Un Eco-Rider") : null, eta: assigned?.eta_minutes ?? null, later: chosen.day !== "Hoy" ? label : null } });
     } catch (e) { toast(humanize(e)); setBusy(false); }
   };
 

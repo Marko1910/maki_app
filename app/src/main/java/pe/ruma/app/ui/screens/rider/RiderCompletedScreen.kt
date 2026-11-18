@@ -79,7 +79,7 @@ fun RiderCompletedScreen(
         SoftCard(Modifier.fillMaxWidth(), gap = RumaSpace.sm) {
             Text("Resumen del recojo", color = RumaColors.Text, style = RumaType.rowTitle)
             SummaryLine("Materiales", state.materialsSummary)
-            SummaryLine("Puntos del recolector", state.pointsAwarded)
+            SummaryLine("Puntos para la familia", state.pointsAwarded)
         }
         SoftCard(Modifier.fillMaxWidth()) {
             Row(horizontalArrangement = Arrangement.spacedBy(RumaSpace.md), verticalAlignment = Alignment.CenterVertically) {

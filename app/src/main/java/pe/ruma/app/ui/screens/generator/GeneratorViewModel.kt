@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import pe.ruma.app.data.CollectionCenterDto
+import pe.ruma.app.data.SavedPileRowDto
 import pe.ruma.app.data.DetectResultDto
 import pe.ruma.app.data.DetectedItemDto
 import pe.ruma.app.data.DetectionDto
@@ -251,7 +252,8 @@ data class DetectedItemUi(
 )
 
 /** The Eco-Rider dispatch just confirmed for a pickup. */
-data class DispatchUi(val riderName: String, val etaMinutes: Int?, val searching: Boolean)
+/** [later] is the window when the pickup is for another day: the rider's minutes away now are not their visit. */
+data class DispatchUi(val riderName: String, val etaMinutes: Int?, val searching: Boolean, val later: String? = null)
 
 class GeneratorViewModel : ViewModel() {
 
@@ -325,8 +327,33 @@ class GeneratorViewModel : ViewModel() {
         private set
     /** The detection just saved this session; non-null means "pedir recojo" links it. */
     private var lastDetectionId by mutableStateOf<String?>(null)
-    /** A scan saved this session with no pickup yet: the home offers "Pide tu recojo". */
-    val hasUnpickedScan: Boolean get() = lastDetectionId != null
+    /**
+     * "Tu ruma guardada": every scan with no pickup yet (last 30 days, rpc/saved_pile), so a family can
+     * scan 3 bottles today and 4 tomorrow and ask for one pickup of 7. Re-read with Home.
+     */
+    var savedPile by mutableStateOf<List<SavedPileRowDto>>(emptyList())
+        private set
+    /** What the AI counted on the scan just saved, to carry the result screen's corrections into the pile. */
+    private var lastAiQty: Map<String, Int> = emptyMap()
+    /** A scan with no pickup yet: the home offers "Pide tu recojo". */
+    val hasUnpickedScan: Boolean get() = lastDetectionId != null || savedPile.isNotEmpty()
+    /** "7 botellas PET y 2 latas de aluminio guardadas", or null with nothing saved. */
+    val savedSummary: String? get() = savedQty().takeIf { it.isNotEmpty() }?.let { qty ->
+        val names = savedPile.associate { it.code to it.name }
+        qty.entries.sortedByDescending { it.value }.map { (c, n) -> "$n " + pickupLabel(c, names[c]).let { if (n == 1) singular(it) else it } }
+            .let { if (it.size > 1) it.dropLast(1).joinToString(", ") + " y " + it.last() else it.single() } +
+            if (qty.size == 1 && qty.values.single() == 1) " guardada" else " guardadas"
+    }
+
+    /** "botellas PET" → "botella PET": every pickupLabel is a feminine plural on its first word. */
+    private fun singular(label: String) = label.replaceFirst(Regex("^(\\p{L}+)s\\b"), "$1")
+
+    /** The pile per material code, with the result screen's corrections to the last scan applied. */
+    private fun savedQty(): Map<String, Int> {
+        val pile = savedPile.associate { it.code to it.quantity }.toMutableMap()
+        if (lastDetectionId != null) detectedQty.forEach { (c, n) -> pile[c] = (pile[c] ?: 0) + n - (lastAiQty[c] ?: 0) }
+        return pile.filterValues { it > 0 }
+    }
     /** min_points of the cheapest active cash option, for the home's "Ya puedes cobrar"; null until read. */
     var cashMin by mutableStateOf<Int?>(null)
         private set
@@ -371,7 +398,9 @@ class GeneratorViewModel : ViewModel() {
     }
 
     private suspend fun ensureSignedIn() {
-        if (!RumaApi.isSignedIn) RumaRepository.signInAsTestGenerator()
+        // The demo account is a dev shortcut only: a tester who lost the session must not
+        // silently scan and book pickups as the shared generador@ruma.test.
+        if (!RumaApi.isSignedIn) { if (pe.ruma.app.BuildConfig.DEBUG) RumaRepository.signInAsTestGenerator() else error("Tu sesión terminó. Cierra sesión y vuelve a entrar.") }
     }
 
     /** Runs [block] after ensuring a session, swallowing errors into [error]. */
@@ -430,6 +459,7 @@ class GeneratorViewModel : ViewModel() {
                     rumaDays = null
                     weekError = "No pudimos cargar tu semana. Reintenta para ver tu progreso."
                 }
+                runCatching { savedPile = RumaRepository.loadSavedPile() }
                 runCatching { hasUnread = RumaRepository.loadNotifications().any { !it.is_read } }
                 runCatching { cashMin = RumaRepository.loadRedemptionOptions().filter { it.kind == "cash" && it.min_points > 0 }.minOfOrNull { it.min_points } }
                 runCatching {
@@ -464,8 +494,8 @@ class GeneratorViewModel : ViewModel() {
         wallet = buildWallet(state.points, options, redemptions)
     }
 
+    /** Re-read on every visit: the board is recomputed each minute from real pickups. */
     fun loadRankings() = load {
-        if (rankings != null) return@load
         // No open period is an answer, not a wait: the screen says so instead of spinning.
         val period = RumaRepository.loadOpenPeriod()
             ?: run { rankings = RankingsUi("Ranking de tu cuadra", entries = emptyList(), rewards = emptyList()); return@load }
@@ -474,7 +504,7 @@ class GeneratorViewModel : ViewModel() {
         val me = RumaApi.session?.userId
         val topPoints = entries.firstOrNull()?.points ?: 0
         rankings = RankingsUi(
-            boardTitle = period.block_label?.let { "Jr. $it" } ?: "Mi Ranking",
+            boardTitle = period.block_label?.let { if (period.scope == "block") "Jr. $it" else "Ranking de $it" } ?: "Mi Ranking",
             periodLabel = listOfNotNull(
                 when (period.period_type) {
                     "weekly" -> "Semanal"
@@ -498,12 +528,9 @@ class GeneratorViewModel : ViewModel() {
     private suspend fun fetchPickupForm() {
         val address = RumaRepository.loadPrimaryAddress()
         val materials = RumaRepository.loadMaterials()
-        val detection = RumaRepository.loadDetections(limit = 1).firstOrNull()
-        val qtyByCode = detection?.detection_items.orEmpty()
-            .filter { it.quantity > 0 && it.materials?.code != null }
-            .associate { it.materials!!.code!! to it.quantity }
-            // A correction made on the result screen wins over what the AI counted.
-            .let { detected -> detected + detectedQty.filterKeys { it in detected.keys } }
+        // The whole saved pile (every scan with no pickup yet), corrections to the last scan included.
+        savedPile = RumaRepository.loadSavedPile()
+        val qtyByCode = savedQty()
         // Show the detected materials, or default to the two common recyclables.
         val codes: Collection<String> = if (qtyByCode.isEmpty()) listOf("PET", "ALU") else qtyByCode.keys
         val items = codes.mapNotNull { code ->
@@ -809,11 +836,11 @@ class GeneratorViewModel : ViewModel() {
     fun createPickup(selections: List<Pair<String, Int>>, windowLabel: String, onDone: () -> Unit) {
         if (selections.none { it.second > 0 }) { message = "Agrega al menos un material al recojo."; return }
         val form = pickupForm
-        val detId = lastDetectionId
+        val fromScans = lastDetectionId != null || savedPile.isNotEmpty()
         val here = pickupHere
         runAction(success = "¡Recojo solicitado!", onSuccess = onDone) {
-            val pickupId = if (detId != null) {
-                // Loop: link the verified detection so its points settle on collection.
+            val pickupId = if (fromScans) {
+                // Link every saved scan (the whole pile) so the rider's count is compared with all of them.
                 val id = RumaRepository.createPickupFromDetection(form?.addressId, scheduledDateFor(windowLabel), windowLabel, here)
                 lastDetectionId = null
                 // The RPC copies the AI's counts; re-state what the user actually has.
@@ -835,10 +862,13 @@ class GeneratorViewModel : ViewModel() {
                 riderName = assigned?.rider_name ?: "Un Eco-Rider",
                 etaMinutes = assigned?.eta_minutes,
                 searching = assigned == null,
+                later = windowLabel.takeUnless { it.startsWith("Hoy", ignoreCase = true) },
             )
             tracking = null  // invalidate caches so Tracking/History reload the new pickup
             history = null
             detectedQty = emptyMap()
+            savedPile = emptyList()
+            pickupForm = null
         }
     }
 
@@ -869,6 +899,7 @@ class GeneratorViewModel : ViewModel() {
         lastDetection = result.toUi(state.streakDays, prices)
         lastDetectionId = result.detection_id   // "pedir recojo" will link this detection
         detectedQty = result.items.associate { it.code to it.quantity }
+        lastAiQty = detectedQty
         detectedBrands = result.items.associate { it.code to brandRows(it.brands, it.quantity) }
         pickupForm = null   // the new detection seeds the pickup form…
         history = null      // …and appears in history

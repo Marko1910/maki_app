@@ -200,7 +200,8 @@ class RiderViewModel : ViewModel() {
     fun notify(text: String) { message = text }
 
     private suspend fun ensureSignedIn() {
-        if (!RumaApi.isSignedIn) RumaRepository.signInAsTestRider()
+        // Dev shortcut only (see GeneratorViewModel.ensureSignedIn).
+        if (!RumaApi.isSignedIn) { if (pe.ruma.app.BuildConfig.DEBUG) RumaRepository.signInAsTestRider() else error("Tu sesión terminó. Cierra sesión y vuelve a entrar.") }
     }
 
     /**
@@ -218,6 +219,15 @@ class RiderViewModel : ViewModel() {
             }
         }
     }
+
+    /**
+     * Stops closed today. Earnings rows only appear when the acopio weighs (mixed pay), so
+     * counting them read "0 completados" right after a completed stop (2026-11-17).
+     */
+    private suspend fun completedToday(): Int = runCatching {
+        RumaRepository.loadRiderHistory(limit = 40)
+            .count { it.status == "completed" && it.completed_at?.let(::localDay) == today() }
+    }.getOrDefault(0)
 
     /** Dashboard data; also polled while the dashboard is open, so dispatches show up. */
     fun refresh() {
@@ -237,7 +247,7 @@ class RiderViewModel : ViewModel() {
             board = buildBoard(available, start)
             dashboard = buildDashboard(
                 dashboard, name, activePickup, assigned.size, available.size, earningRows, profile, unread, start,
-                onShift,
+                onShift, completedToday(),
             )
         }
     }
@@ -453,7 +463,7 @@ class RiderViewModel : ViewModel() {
     fun loadEarnings(force: Boolean = false) = load(KEY_EARNINGS) {
         if (earnings != null && !force) return@load
         val rows = RumaRepository.loadRiderEarnings(limit = 200)
-        earnings = buildEarnings(rows, RumaRepository.loadMyRiderProfile())
+        earnings = buildEarnings(rows, RumaRepository.loadMyRiderProfile(), completedToday())
     }
 
     fun loadStats(force: Boolean = false) = load(KEY_STATS) {
@@ -952,10 +962,10 @@ private fun buildDashboard(
     unread: Int,
     origin: RoutePlanner.LatLng?,
     onShift: Boolean,
+    doneToday: Int,
 ): RiderDashboardUiState {
     val nextIsMine = next?.rider_id != null
     val todayRows = earnings.filter { localDay(it.created_at) == today() }
-    val doneToday = todayRows.size
     val monthTotal = earnings.filter { localDay(it.created_at).startsWith(currentMonthPrefix()) }.sumOf { it.amount }
     val goal = profile?.monthly_goal?.takeIf { it > 0 }
     val km = next?.latLng()?.toLL()?.let { stop -> origin?.let { RoutePlanner.distanceKm(it, stop) } }
@@ -985,6 +995,9 @@ private fun buildDashboard(
         nextStopEta = km?.let { "Llegas ${RumaTime.clockPlus(RoutePlanner.etaMinutes(it))}" }.orEmpty(),
         nextStopDistance = when {
             next == null -> ""
+            // A pickup booked for tomorrow read "Disponible ahora" at night and the rider went (2026-11-17).
+            next.scheduled_date?.let { it > today() } == true ->
+                (next.window_label ?: "Otro día") + if (nextIsMine) "" else " · tócala para tomarla"
             !nextIsMine -> "Disponible · tócala para tomarla"
             km != null -> "A ${RoutePlanner.distanceLabel(km)}"
             else -> "Asignado"
@@ -1004,7 +1017,7 @@ private fun PickupDto.toConfirmUi(qty: Map<String, Int>, cond: Map<String, Strin
         ConfirmMaterialUi(
             name = it.materials?.name ?: "Material",
             code = it.materials?.code.orEmpty(),
-            detail = "El recolector declaró ${it.reported_quantity}",
+            detail = "La familia declaró ${it.reported_quantity}",
             points = "+${it.points} pts",
             materialId = mid,
             declared = it.reported_quantity,
@@ -1224,7 +1237,7 @@ private fun buildHistory(pickups: List<PickupDto>): RiderHistoryUiState {
 
 // ---- Earnings ----
 
-private fun buildEarnings(rows: List<RiderEarningDto>, profile: RiderProfileDto?): RiderEarningsUiState {
+private fun buildEarnings(rows: List<RiderEarningDto>, profile: RiderProfileDto?, doneToday: Int): RiderEarningsUiState {
     val month = currentMonthPrefix()
     val monthRows = rows.filter { localDay(it.created_at).startsWith(month) }
     val monthTotal = monthRows.sumOf { it.amount }
@@ -1263,7 +1276,7 @@ private fun buildEarnings(rows: List<RiderEarningDto>, profile: RiderProfileDto?
         },
         progress = goal?.let { (monthTotal / it).coerceIn(0.0, 1.0).toFloat() } ?: 0f,
         today = "${soles(todayRows.sumOf { it.amount })} hoy",
-        todaySub = "${todayRows.size} recojo${if (todayRows.size == 1) "" else "s"} completado${if (todayRows.size == 1) "" else "s"}",
+        todaySub = "$doneToday recojo${if (doneToday == 1) "" else "s"} completado${if (doneToday == 1) "" else "s"} · se pagan al pesar",
         days = days,
         weekTotal = soles(weekTotal),
         available = soles(profile?.earnings_balance ?: monthTotal),
