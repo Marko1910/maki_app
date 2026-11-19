@@ -291,7 +291,7 @@ function canonical(userId: string, sessionId: string, iat: number, items: Counte
 }
 
 // Bump when the prompt, catalog or counting rules change; model aliases can drift too.
-const PIPELINE_VERSION = "ruma-photo-2026-11-06-v2"; // box_2d [ymin,xmin,ymax,xmax], whole container
+const PIPELINE_VERSION = "ruma-photo-2026-11-18-v3"; // box_2d [ymin,xmin,ymax,xmax], whole container
 type Provenance = { provider: string; model: string; pipeline: string; resolved_model?: string };
 
 function tokenParts(token: unknown): { iat: number; mac: string; metadata: string; source: Provenance | null } | null {
@@ -578,6 +578,32 @@ Deno.serve(async (req: Request) => {
           answer: String(a.body?.choices?.[0]?.message?.content ?? "").slice(0, 1200),
         })),
         available_models: { groq: groqModels, gemini: geminiModels },
+      });
+    }
+
+    // ---- learn: read one reference image (tools/brand-learn), operators only ----
+    // Same prompt and providers as a real scan, so the tool measures what the family's phone gets.
+    // No liveness gate (a catalog photo is still by nature) and nothing is saved.
+    if (payload.mode === "learn") {
+      const { data: me } = await admin.from("profiles").select("role").eq("id", user.id).maybeSingle();
+      if (me?.role !== "operador") return json({ error: "forbidden" }, 403);
+      const frame = typeof payload.frame === "string" ? payload.frame : "";
+      if (!frame) return json({ error: "no_frame" }, 400);
+      const vision = await callVision(admin, [
+        { type: "text", text: PROMPT },
+        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${frame}` } },
+      ]);
+      if (!("body" in vision)) return json({ busy: true, retry_after_ms: vision.retryAfterMs });
+      let parsed: any = {};
+      try { parsed = JSON.parse(vision.body?.choices?.[0]?.message?.content ?? "{}"); } catch { parsed = {}; }
+      return json({
+        provider: vision.provider, model: vision.model, pipeline: PIPELINE_VERSION,
+        spoof: parsed?.spoof?.screen === true,
+        items: (Array.isArray(parsed.items) ? parsed.items : []).map((it: any) => ({
+          code: String(it.code ?? ""), quantity: Number(it.quantity) || 0,
+          brand_raw: it.brand ?? null, texto: it.texto ?? "", etiqueta: it.etiqueta ?? "", tapa: it.tapa ?? "",
+          brand: evidencedBrand(it.brand, it.texto),
+        })),
       });
     }
 

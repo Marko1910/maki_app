@@ -1,6 +1,7 @@
 // The PWA's twin of data/RumaRepository.kt: every table, RPC and function name lives here.
 // The client asks and the database decides: triggers and RPCs own points and money.
 import { createClient } from "@supabase/supabase-js";
+import { cacheClear } from "./cache";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
 
 export const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -66,11 +67,11 @@ export async function signIn(email: string, password: string) {
 }
 
 /** True when signed straight in; false when the email needs confirming. */
-export async function signUp(email: string, password: string, role: string, name: string, address: PendingAddress | null, referralCode = "") {
+export async function signUp(email: string, password: string, role: string, name: string, address: PendingAddress | null, referralCode = "", phone: string | null = null) {
   const { data, error } = await sb.auth.signUp({
     email: email.trim(), password,
     // referral_code is read by handle_new_user, which attaches it only for the generador role.
-    options: { data: { role, full_name: name.trim(), display_name: name.trim(), ...(role === "generador" && referralCode ? { referral_code: referralCode } : {}) } },
+    options: { data: { role, full_name: name.trim(), display_name: name.trim(), ...(phone ? { phone } : {}), ...(role === "generador" && referralCode ? { referral_code: referralCode } : {}) } },
   });
   if (error) throw error;
   // With email confirmation on, GoTrue answers a repeated email with success and no identities, and sends nothing.
@@ -89,6 +90,7 @@ export async function signOut() {
     const sub = await (await navigator.serviceWorker?.getRegistration())?.pushManager?.getSubscription();
     if (sub) await sb.rpc("unregister_push_token", { p_token: sub.endpoint });
   } catch { /* signing out matters more than the token */ }
+  cacheClear(); // the next account must not see this one's screens
   return sb.auth.signOut();
 }
 
@@ -104,13 +106,15 @@ export async function loadMyRole(): Promise<string | null> {
 /* ---------- Profile ---------- */
 
 export async function loadGeneratorProfile() {
-  const r = await q(sb.from("generator_profiles").select("points_balance,points_pending,cash_earned_total,current_streak_days,co2_avoided_kg,recycled_kg,water_saved_l,trees_equivalent,profiles(display_name,full_name)").eq("profile_id", await need()));
+  const r = await q(sb.from("generator_profiles").select("points_balance,points_pending,cash_earned_total,current_streak_days,co2_avoided_kg,recycled_kg,water_saved_l,trees_equivalent,profiles(display_name,full_name,ruma_code)").eq("profile_id", await need()));
   return r[0] ?? null;
 }
 export async function loadMyProfile() {
   const r = await q(sb.from("profiles").select("display_name,phone,avatar_url").eq("id", await need()));
   return r[0] ?? null;
 }
+/** Only the mobile number: asked on the pickup form when the account has none (the rider must be able to call). */
+export const updateMyPhone = async (phone: string) => q(sb.from("profiles").update({ phone }).eq("id", await need()));
 export const updateMyProfile = async (displayName: string, phone: string | null) =>
   q(sb.from("profiles").update({ display_name: displayName, phone }).eq("id", await need()));
 export async function myEmail() {
@@ -194,7 +198,7 @@ export const markNotificationRead = async (id: number) => q(sb.from("notificatio
 
 /* ---------- Pickups: family ---------- */
 
-const ITEMS = "pickup_items(reported_quantity,confirmed_quantity,condition,points,materials(id,name,code,icon))";
+const ITEMS = "pickup_items(reported_quantity,confirmed_quantity,condition,weight_kg,points,materials(id,name,code,icon,avg_weight_kg))";
 const PICKUP = `id,code,status,scheduled_date,window_label,eta_minutes,generator_points_awarded,generator_points_final,points_status,cancel_reason,rider_id,created_at,requested_at,assigned_at,started_at,arrived_at,completed_at,cancelled_at,latitude,longitude,distance_m,${ITEMS},rider:profiles!pickups_rider_id_fkey(display_name,phone),address:addresses!pickups_address_id_fkey(address_line,latitude,longitude)`;
 export const ACTIVE = ["requested", "assigned", "en_route", "arriving", "collecting"];
 
@@ -278,7 +282,7 @@ export const saveChatMessage = (conversationId: string, role: string, content: s
 /* ---------- Rider ---------- */
 
 const RIDER_PROFILE = "rating,vehicle_type,rating_count,total_collections,total_recycled_kg,co2_avoided_kg,earnings_balance,earnings_lifetime,monthly_goal,is_available,rider_code";
-const RIDER_PICKUP = `id,code,status,scheduled_date,window_label,eta_minutes,rider_earnings,total_weight_kg,generator_points_awarded,rider_id,created_at,completed_at,match_status,condition,notes,cancel_reason,latitude,longitude,distance_m,${ITEMS},generator:profiles!pickups_generator_id_fkey(display_name,phone),address:addresses!pickups_address_id_fkey(address_line,reference,latitude,longitude)`;
+const RIDER_PICKUP = `id,code,status,scheduled_date,window_label,priority,eta_minutes,rider_earnings,total_weight_kg,generator_points_awarded,rider_id,created_at,completed_at,match_status,condition,notes,cancel_reason,latitude,longitude,distance_m,${ITEMS},generator:profiles!pickups_generator_id_fkey(display_name,phone,ruma_code),address:addresses!pickups_address_id_fkey(address_line,reference,latitude,longitude)`;
 
 export const loadMyRiderProfile = async () => loadRiderProfile(await need());
 export const loadMyName = async () => (await q(sb.from("profiles").select("display_name").eq("id", await need())))[0]?.display_name ?? null;
@@ -292,6 +296,8 @@ export async function acceptPickup(pickupId: string) {
   const r = await q(sb.from("pickups").update({ rider_id: await need(), status: "assigned" }).eq("id", pickupId).eq("status", "requested").is("rider_id", null).select("id"));
   return r.length > 0;
 }
+/** "Llegué al acopio": the rider (or the center's operator) marks the load as delivered to the center. */
+export const markDeliveryArrived = (id: string) => q(sb.rpc("mark_delivery_arrived", { p_delivery_id: id }));
 export const setPickupStatus = (id: string, status: string) => q(sb.from("pickups").update({ status }).eq("id", id));
 export const releasePickup = (id: string) => q(sb.rpc("release_pickup", { p_pickup_id: id }));
 export const confirmQuantities = async (id: string, items: [string, number][], conditions: Record<string, string> = {}) => {
@@ -312,5 +318,5 @@ export const setRiderShiftStart = async (at: Date | null) =>
 
 /** dp=is.null is the anti-join for "in no delivery yet"; create_delivery has the final word. */
 export const loadUndeliveredPickups = async () => q(sb.from("pickups").select(`${RIDER_PICKUP},dp:delivery_pickups(pickup_id)`).eq("rider_id", await need()).eq("status", "completed").is("dp", null).order("completed_at"));
-export const loadMyDeliveries = async () => q(sb.from("deliveries").select("id,code,status,total_kg,rider_amount,departed_at,settled_at,center:collection_centers(name),delivery_pickups(pickup_id)").eq("rider_id", await need()).order("created_at", { ascending: false }).limit(10));
+export const loadMyDeliveries = async () => q(sb.from("deliveries").select("id,code,status,total_kg,rider_amount,departed_at,arrived_at,settled_at,center:collection_centers(name),delivery_pickups(pickup_id)").eq("rider_id", await need()).order("created_at", { ascending: false }).limit(10));
 export const createDelivery = (centerId: string, pickupIds: string[]) => q(sb.rpc("create_delivery", { p_center_id: centerId, p_pickup_ids: pickupIds }));

@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -77,6 +78,12 @@ fun RegisterScreen(
             RumaInputField(
                 "CORREO", Icons.Filled.MailOutline, vm.email, vm::onEmail,
                 placeholder = "tucorreo@ejemplo.com", keyboardType = KeyboardType.Email, accent = accent, enabled = !vm.loading,
+            )
+            RumaInputField(
+                "CELULAR", Icons.Filled.Phone, vm.phone, vm::onPhone,
+                placeholder = "987 654 321", keyboardType = KeyboardType.Phone, accent = accent, enabled = !vm.loading,
+                helper = if (rider) "Las familias podrán llamarte cuando vayas en camino."
+                else "El Eco-Rider te llamará si no encuentra tu casa.",
             )
             RumaInputField(
                 "CONTRASEÑA", Icons.Filled.Lock, vm.password, vm::onPassword,

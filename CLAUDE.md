@@ -130,6 +130,12 @@ header when you replay it.
   `{"mode":"health"}` (operators only) pings every provider and lists the models each key can
   reach — use it to replace a retired model. Check provider health with
   `select * from vision_provider_status`.
+- **Brand learning** (`tools/brand-learn/brand_learn.py`, 2026-11-18): `collect` downloads open-licence photos of every
+  `brands.ts` brand (Open Food Facts, Wikimedia Commons; source and licence in `manifest.jsonl`) into
+  `../datasets/marcas/` outside the repo; `learn` reads each through `detect-material {"mode":"learn"}` (operators
+  only, no liveness, saves nothing) with the STAGING operator test account; `report` scores each brand and proposes
+  label words the AI copied on 2+ images of one brand only; `apply --write` adds them to `texts`. Then bump
+  `PIPELINE_VERSION` and redeploy. The same folder seeds the future own detector.
 - **`ruma-assistant`** — chat agent grounded in Peru's container rules plus the caller's real context
   (points, recent detections, live `v_material_prices`). Gemini primary, Groq fallback — a chat turn
   can afford the latency.
@@ -169,12 +175,40 @@ into `redemptions`; DB triggers validate the balance and post the ledger. Since 
 and `kind`, `monetary_value`, `status` and the payout fields are set by the database whatever the client sends. Keep new money/points paths
 on this shape: the client asks, the database decides.
 
+**The acopio weighs every sack; the rider only carries it** (since 2026-11-18, decided after `docs/debate-quien-mide.md`;
+`supabase/sql/2026-11-18_saco_pesado_conteo_acopio.sql` then `2026-11-18_acopio_pesa_saco.sql`, STAGING only, check with
+`supabase/tests/acopio_pesa_saco_staging.sql`). Every person has a unique sack code (`profiles.ruma_code`, "RU-" + 6 chars
+without 0/O/1/I/L; the app can't change it) written on their sack and shown in Perfil and on the pickup form. At the door
+the rider taps "Recibí el saco RU-XXXX" (no scale, no count). The acopio panel (`dashboard`, weighing modal) weighs each
+sack per material into `pickup_items.center_weight_kg` and grades `center_condition`; it asks for a hand count
+(`center_quantity`) only when the weight doesn't back the declaration (`sack_weight_ok`: ±`sack_weight_tolerance`, 35 %,
+of declared × `avg_weight_kg`) or the pickup was drawn for the random audit (`pickups.sack_audit`, 1 in
+`sack_audit_every` = 10, drawn at creation so nobody re-rolls it). `settle_delivery` pays `sack_units`: counted, else
+declared when backed, else estimated by weight. Only that center's operator may write the center_* columns while the
+delivery is `recibida`/`pesada`. The acopio count and sack weight also go to `ruma_analytics.pickup_count_samples`.
+Rationale: a 25 % overstatement on 100 bottles is ~S/ 0,25; verifying every sack by hand costs more.
+
 **Tu ruma guardada** (since 2026-11-18, `supabase/sql/2026-11-18_ruma_guardada.sql`, STAGING only, check with
 `supabase/tests/ruma_guardada_staging.sql`, which rolls itself back): every `pending` scan of the last 30 days with no
 pickup is the family's saved pile (`rpc/saved_pile`). `create_pickup_from_detection` books the whole pile into one pickup
 (items summed per material, each scan linked by `detections.pickup_id`); a cancelled/failed pickup gives its scans back;
 the IA-vs-rider sample sums every scan of the pickup and flags mixed provenance. Clients: `savedPile`/`savedSummary` in
 `GeneratorViewModel`, `pwa/src/lib/pile.ts` (`node scripts/check-pile.ts`).
+
+A pickup needs a way to call the family and a place to go (`supabase/sql/2026-11-18_celular_y_ubicacion.sql`,
+STAGING only, check with `supabase/tests/celular_ubicacion_staging.sql`): `trg_pickup_contact` refuses an insert whose
+family has no mobile number or that has neither GPS nor address (`*@ruma.test` exempt, so tests never ring a real
+number). Registration asks the number on both platforms and the pickup form asks it when the account has none;
+`PeruPhone` / `pwa/src/lib/phone.ts` normalise it to +51 9XXXXXXXX.
+
+Arrival and delivery states (since 2026-11-19, `supabase/sql/2026-11-19_llegada_y_estados_entrega.sql`, STAGING only,
+check with `supabase/tests/llegada_estados_staging.sql`): `trg_pickup_arrival` accepts "He llegado" (status `collecting`)
+only with a rider fix younger than `arrival_fix_max_age_s` within `arrival_radius_m` (150 m) of the house; both apps
+publish the live fix first and show the refusal. A SECURITY DEFINER trigger must test `auth.role()`, not `current_user`
+(which is the owner there). The rider (or the panel's "Marcar llegada") calls `rpc/mark_delivery_arrived`
+(`deliveries.arrived_at`). The rider reads: En camino al acopio → En el centro de acopio → Contando (`recibida`/`pesada`;
+the panel's "Empezar conteo") → Terminado · pago en proceso (`liquidada`); `trg_delivery_notify` tells them each step.
+Rider screens fed from the acopio (deliveries, earnings, history, stats, ranking) reload on every visit.
 
 The rider opens that delivery from "Entregar en acopio" through **rpc/create_delivery**, which
 validates ownership and `completed` status while holding the pickups locked; direct INSERT on
@@ -207,6 +241,13 @@ Rankings are live since 2026-11-17 (`supabase/sql/2026-11-17_ranking_semanal.sql
 runs `refresh_leaderboards()` every minute, which opens the current Lima week's board ("Cartavio") per role and ranks every
 active user by the points of the pickups completed that week (bonuses and referrals don't count). Both apps just read it.
 
+The rider's stop order (since 2026-11-18) comes from `RouteOptimizer` (`data/RouteOptimizer.kt`, twin
+`pwa/src/lib/routeOptimizer.ts`, `node scripts/check-route.ts`) over OSRM `table` street minutes
+(`StreetRouter.bestOrder` / `bestStreetOrder`): driving + 3× each minute past a family's window
+(`dueMinutes` reads "Hoy 3:00 - 6:00 pm" against `scheduled_date`) + 1× each minute a Ruma Plus
+(`pickups.priority`) family waits. Exact up to 8 stops, 2-opt + relocate above; a stop booked for another day goes
+last; OSRM `trip` is the fallback when the table fails. An operator's planned route keeps its order.
+
 Routing investigation and implementation phases: `docs/ecorider-routing-research.md`.
 Public endpoint probes passed on 2026-11-03, including the exact open Trip parameters.
 The implementation status and verification checklist are in `docs/ecorider-navigation-implementation.md`.
@@ -228,6 +269,10 @@ Hobby is non-commercial only: move to Pro or another host before operating with 
 - `src/lib/api.ts` is the twin of `RumaRepository`: every table, RPC and function name lives there, and the
   same rule holds: the client asks, the database decides. A change to a call in one usually belongs in the other.
 - `src/lib/fold.ts` mirrors `foldPhotos` in `detect-material`, as `pileTally` does on Android.
+- `useAsync` (`src/lib/util.ts`) is stale-while-revalidate over `src/lib/cache.ts`: a screen visited before this
+  session paints its last data at once and refreshes quietly; `signOut` clears it. Loading states are `Skeleton`,
+  not a spinner (the only spinner left is the session check in `App.tsx`). Android: `RumaSkeleton` only while a
+  section is still null, so revisits keep the ViewModel's data on screen.
 - The role swaps CSS variables only (`[data-role="rider"]` in `styles.css`), so screens are shared when they can be.
 - Designs live in the Stitch project "Ruma PWA"; the logo in `design/ruma/logo/`.
 - iOS cannot run anything with the PWA closed: no background location, and a booked shift starts on the first

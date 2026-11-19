@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Empty, Failure, Icon, Loading, TopBar, useToast } from "../../components/ui";
+import { Empty, Failure, Icon, Skeleton, TopBar, useToast } from "../../components/ui";
 import { humanize, loadMarketNews, loadMaterialDemand, loadMyProfile, loadNotifications, loadPrices, markAllNotificationsRead, markNotificationRead, myEmail, updateMyProfile, type Row } from "../../lib/api";
 import { ago, initials, soles, useAsync } from "../../lib/util";
 import { PushCard } from "../../components/Push";
@@ -28,7 +28,7 @@ export function Market() {
   return (
     <main className="screen with-nav">
       <TopBar title="Mercado Vivo" sub="Cuánto paga hoy cada material y qué están pidiendo los acopios" back={false} />
-      {loading ? <Loading text="Consultando el mercado…" /> : error ? <Failure text={error} retry={() => void reload()} /> : !rows.length && !data?.news.length ? <Empty title="El mercado está en calma" text="Cuando haya precios y novedades de tu zona los verás aquí." icon="market" /> : <>
+      {loading ? <Skeleton label="Consultando el mercado…" blocks={[120, 64, 64, 64, 96]} /> : error ? <Failure text={error} retry={() => void reload()} /> : !rows.length && !data?.news.length ? <Empty title="El mercado está en calma" text="Cuando haya precios y novedades de tu zona los verás aquí." icon="market" /> : <>
         {top && <section className="hero">
           <div className="between"><p className="t-over">Lo más buscado hoy</p>{top.pct !== 0 && <span className="chip chip-hero">{top.pct > 0 ? "Sube" : "Baja"} {top.pct > 0 ? "+" : ""}{Math.round(top.pct)}%</span>}</div>
           <div className="between"><p className="t-title">{top.name}</p><p className="t-title">{soles(top.price)}<span className="t-small">/kg</span></p></div>
@@ -81,7 +81,7 @@ export function Notifications() {
     <main className="screen">
       <TopBar title="Notificaciones" right={data?.some(isUnread) ? <button className="btn-text" style={{ padding: "0 8px" }} onClick={() => void all()}>Marcar leídas</button> : undefined} />
       <PushCard />
-      {loading ? <Loading text="Cargando notificaciones…" /> : error ? <Failure text={error} retry={() => void reload()} /> : !data?.length ? <Empty title="Sin notificaciones" text="Aquí te avisaremos de tus recojos, puntos y ganancias." icon="bell" /> :
+      {loading ? <Skeleton label="Cargando notificaciones…" blocks={[72, 72, 72, 72]} /> : error ? <Failure text={error} retry={() => void reload()} /> : !data?.length ? <Empty title="Sin notificaciones" text="Aquí te avisaremos de tus recojos, puntos y ganancias." icon="bell" /> :
         <div className="glass list">{data.map((n) => (
           <button key={n.id} onClick={() => one(n)} style={isUnread(n) ? { background: "var(--accent-tint)" } : undefined} aria-label={`${isUnread(n) ? "No leída. " : ""}${n.title}`}>
             <span className="badge"><Icon name="bell" /></span>
@@ -114,7 +114,7 @@ export function EditProfile() {
   return (
     <main className="screen with-bar">
       <TopBar title="Editar perfil" />
-      {loading ? <Loading text="Cargando tu perfil…" /> : error ? <Failure text={error} retry={() => void reload()} /> : <>
+      {loading ? <Skeleton label="Cargando tu perfil…" blocks={[120, 20, 88, 64, 64]} /> : error ? <Failure text={error} retry={() => void reload()} /> : <>
         <div className="stack center" style={{ alignItems: "center" }}>
           <span className="glass t-title accent" style={{ width: 88, height: 88, borderRadius: "50%", display: "grid", placeItems: "center" }}>{initials(name)}</span>
           <p className="muted t-small">Tu inicial por ahora. La foto llega pronto.</p>

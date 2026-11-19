@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import pe.ruma.app.data.PeruPhone
 import pe.ruma.app.data.RumaPrefs
 import pe.ruma.app.data.RumaRepository
 import pe.ruma.app.navigation.AppRoutes
@@ -38,6 +39,9 @@ class AuthViewModel : ViewModel() {
     /** Optional "¿Te invitó alguien?" code; the database checks it, the app only sends it. */
     var referralCode by mutableStateOf("")
         private set
+    /** Mobile number: the rider calls the family from the street, and the family calls the rider. */
+    var phone by mutableStateOf("")
+        private set
 
     /** Role chosen on the role-select screen; drives the post-login destination. */
     var role by mutableStateOf(RumaPrefs.role)
@@ -47,6 +51,7 @@ class AuthViewModel : ViewModel() {
     fun onPassword(v: String) { password = v; clearFeedback() }
     fun onFullName(v: String) { fullName = v; clearFeedback() }
     fun onAddress(v: String) { address = v; clearFeedback() }
+    fun onPhone(v: String) { phone = v.filter { it.isDigit() || it in "+ -" }.take(16); clearFeedback() }
     fun onReferralCode(v: String) { referralCode = v.uppercase().filter { it.isLetterOrDigit() }.take(6); clearFeedback() }
     fun togglePasswordVisible() { passwordVisible = !passwordVisible }
 
@@ -151,6 +156,7 @@ class AuthViewModel : ViewModel() {
             name.length < 2 -> { error = "Escribe tu nombre."; return }
             !email.contains("@") || !email.contains(".") -> { error = "Escribe un correo válido."; return }
             password.length < 6 -> { error = "La contraseña debe tener al menos 6 caracteres."; return }
+            PeruPhone.normalize(phone) == null -> { error = PeruPhone.HINT; return }
         }
         loading = true
         clearFeedback()
@@ -161,6 +167,7 @@ class AuthViewModel : ViewModel() {
                     password = password,
                     role = role,
                     fullName = name,
+                    phone = PeruPhone.normalize(phone),
                     addressLine = address.trim().takeIf { it.isNotBlank() },
                     latitude = RumaPrefs.pendingLat,
                     longitude = RumaPrefs.pendingLng,

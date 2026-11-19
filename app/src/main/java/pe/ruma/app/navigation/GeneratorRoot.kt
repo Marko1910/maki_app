@@ -12,6 +12,8 @@ import pe.ruma.app.ui.screens.generator.nextStep
 import pe.ruma.app.ui.screens.account.EditProfileScreen
 import pe.ruma.app.ui.screens.account.AccountViewModel
 import pe.ruma.app.data.RumaLocation
+import pe.ruma.app.data.RumaApi
+import pe.ruma.app.data.RumaPrefs
 import pe.ruma.app.data.RumaPush
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -175,6 +177,7 @@ fun GeneratorRoot(
                 ),
         ) {
             composable(GenRoutes.HOME) {
+                var usedStep by remember { mutableStateOf(RumaPrefs.readUsedStep(RumaApi.session?.userId)) }
                 // Polling, not realtime: this card is how the family sees a rider
                 // accept, arrive or finish while they were on another screen.
                 LaunchedEffect(Unit) {
@@ -203,12 +206,14 @@ fun GeneratorRoot(
                     onGoalChange = vm::chooseWeeklyGoal,
                     creditedGain = vm.creditedGain,
                     onCreditedSeen = vm::creditedSeen,
+                    // Once its button is used the card steps aside (it blocked the home's view) until a different step.
                     nextStep = nextStep(
                         liveTitle = h.activeTitle, liveLine = h.activeLine,
                         unpickedScan = vm.hasUnpickedScan, saved = vm.savedSummary,
                         balance = g.points, cashMin = vm.cashMin,
                         weekDays = vm.week?.days, weekLeft = vm.week?.left,
-                    ),
+                    ).takeIf { it.key != usedStep },
+                    onNextStepUsed = { usedStep = it.key; RumaPrefs.writeUsedStep(RumaApi.session?.userId, it.key) },
                     dispatch = vm.dispatch,
                     onDispatchSeen = vm::consumeDispatch,
                     invitePrompt = invitePrompt,
@@ -317,14 +322,15 @@ fun GeneratorRoot(
                 val haptic = LocalHapticFeedback.current
                 GeneratorPickupScreen(
                     form = vm.pickupForm,
+                    sackCode = vm.state.sackCode,
                     busy = vm.busy,
                     gpsLine = vm.pickupHere?.let { vm.pickupHereLabel ?: "Tu ubicación actual" },
                     here = vm.pickupHere,
                     locating = locating,
                     onUseMyLocation = { if (granted) locateTick++ else askLocation.launch(locationPermissions) },
                     onBack = { nav.popBackStack() },
-                    onConfirm = { selections, window ->
-                        vm.createPickup(selections, window) {
+                    onConfirm = { selections, window, phone ->
+                        vm.createPickup(selections, window, phone) {
                             askNotifications()   // now there is a rider to hear about
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             vm.trackPickup(null)   // the one just asked for is the active one

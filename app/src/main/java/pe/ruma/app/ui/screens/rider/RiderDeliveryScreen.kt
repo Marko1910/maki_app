@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -30,6 +31,7 @@ import pe.ruma.app.ui.components.RumaList
 import pe.ruma.app.ui.components.RumaSkeleton
 import pe.ruma.app.ui.components.RumaRow
 import pe.ruma.app.ui.components.PrimaryButton
+import pe.ruma.app.ui.components.SecondaryButton
 import pe.ruma.app.ui.components.SectionLabel
 import pe.ruma.app.ui.components.StatusChip
 import pe.ruma.app.ui.components.rumaScreen
@@ -69,6 +71,8 @@ data class DeliveryRecordUi(
     val centerName: String,
     val detail: String,
     val amount: String,
+    /** On its way and not yet marked: the rider can say "Llegué al acopio". */
+    val canMarkArrived: Boolean = false,
 )
 
 data class RiderDeliveryUiState(
@@ -98,6 +102,7 @@ fun RiderDeliveryScreen(
     onPickCenter: (String) -> Unit = {},
     onSend: () -> Unit = {},
     onRetry: () -> Unit = {},
+    onArrivedCenter: (String) -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().rumaScreen(RumaColors.Rider).statusBarsPadding()) {
         DetailHeader(title = "Entregar en acopio", onBack = onBack)
@@ -139,7 +144,7 @@ fun RiderDeliveryScreen(
                     }
                     if (state.recent.isNotEmpty()) {
                         item { SectionLabel("Entregas anteriores") }
-                        item { RumaList(state.recent) { RecordRow(it) } }
+                        item { RumaList(state.recent) { RecordRow(it, enabled = !busy, onArrivedCenter) } }
                     }
                 }
             }
@@ -194,14 +199,15 @@ private fun StopRow(stop: DeliveryStopUi, onClick: () -> Unit) {
 }
 
 @Composable
-private fun RecordRow(record: DeliveryRecordUi) {
+private fun RecordRow(record: DeliveryRecordUi, enabled: Boolean, onArrivedCenter: (String) -> Unit) {
     // Only `liquidada` has actually paid; anything earlier is still a promise.
     val tone = when (record.status) {
         "liquidada" -> RumaColors.Success
         "rechazada" -> RumaColors.Error
-        "pesada" -> RumaColors.Money
+        "pesada", "recibida" -> RumaColors.Money
         else -> RumaColors.Rider
     }
+    Column(verticalArrangement = Arrangement.spacedBy(RumaSpace.xs)) {
     RumaRow(
         record.code.ifBlank { "Entrega" },
         subtitle = listOf(record.centerName, record.detail).filter { it.isNotBlank() }.joinToString(" · "),
@@ -210,6 +216,13 @@ private fun RecordRow(record: DeliveryRecordUi) {
             { Text(record.amount, color = RumaColors.Money, style = RumaType.rowTitle) }
         } else null,
     )
+    if (record.canMarkArrived) {
+        SecondaryButton(
+            "Llegué al acopio · dejé la carga", Modifier.fillMaxWidth().padding(horizontal = RumaSpace.md),
+            color = RumaColors.Rider, enabled = enabled, onClick = { onArrivedCenter(record.id) },
+        )
+    }
+    }
 }
 
 @androidx.compose.ui.tooling.preview.Preview(showBackground = true, widthDp = 390, heightDp = 1200)

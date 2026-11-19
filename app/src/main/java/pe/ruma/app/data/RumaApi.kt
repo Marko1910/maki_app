@@ -244,6 +244,8 @@ object RumaApi {
             }
         } catch (e: Exception) { null } ?: body
         return when {
+            // A RAISE in our SQL (P0001) is written for the person: show it as is, without "Error (400):".
+            body.contains("\"P0001\"") -> msg
             msg.contains("Insufficient points", ignoreCase = true) -> "Saldo insuficiente para este canje."
             msg.contains("must be positive", ignoreCase = true) -> "Monto de canje inválido."
             else -> "Error ($code): $msg"

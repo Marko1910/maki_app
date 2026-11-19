@@ -1,6 +1,7 @@
 -- 2026-11-18 · "Tu ruma guardada": juntar botellas en varios escaneos y pedir un solo recojo
 -- APLICADO en STAGING (mbbdrmicjobydprvbpsj) el 2026-11-18. Falta repetirlo en producción.
 -- Verificar con supabase/tests/ruma_guardada_staging.sql (corre todo y lo revierte; espera "9/9 PASA").
+-- Re-aplicado el 2026-11-18 por la tarde: parámetros opcionales en create_pickup_from_detection (404 sin dirección).
 --
 -- Antes: create_pickup_from_detection enlazaba solo el ÚLTIMO escaneo pendiente. Quien escaneaba 3 botellas hoy y 4
 -- mañana pedía un recojo de 4; las 3 primeras quedaban 'pending' para siempre y nunca se comparaban con el rider.
@@ -56,8 +57,11 @@ $$;
 revoke all on function public.saved_pile() from public, anon;
 grant execute on function public.saved_pile() to authenticated;
 
+-- Every parameter optional: Android leaves a null field out of the body, and a family with no saved address
+-- got PostgREST's 404 "Could not find the function" on "Pedir recojo" (2026-11-18, account with 0 addresses).
+-- Defaults fix it for the APKs already installed, without an update.
 create or replace function public.create_pickup_from_detection(
-  p_address_id uuid, p_scheduled_date date, p_window_label text,
+  p_address_id uuid default null, p_scheduled_date date default null, p_window_label text default null,
   p_latitude double precision default null, p_longitude double precision default null)
 returns uuid
 language plpgsql security definer set search_path = public

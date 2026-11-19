@@ -32,7 +32,7 @@ import pe.ruma.app.ui.components.DetailHeader
 import pe.ruma.app.ui.components.RumaBottomAction
 import pe.ruma.app.ui.components.RumaError
 import pe.ruma.app.ui.components.RumaInputField
-import pe.ruma.app.ui.components.RumaLoading
+import pe.ruma.app.ui.components.RumaSkeleton
 import pe.ruma.app.ui.components.PrimaryButton
 import pe.ruma.app.ui.components.SectionLabel
 import pe.ruma.app.ui.components.SoftCard
@@ -82,7 +82,7 @@ fun EditProfileScreen(
         ) {
             when {
                 error != null -> item { RumaError(error, onRetry, accent = accent) }
-                state == null -> item { RumaLoading("Cargando tu perfil…", accent = accent) }
+                state == null -> item { RumaSkeleton(listOf(96.dp, 72.dp, 72.dp, 52.dp), label = "Cargando tu perfil…") }
                 else -> {
                     item { Retrato(state, accent) }
                     item { SectionLabel("TUS DATOS") }

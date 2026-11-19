@@ -266,7 +266,7 @@ fun RiderRoot(
                 )
             }
             composable(RiderRoutes.HISTORY) {
-                LaunchedEffect(Unit) { vm.loadHistory() }
+                LaunchedEffect(Unit) { vm.loadHistory(force = true) }   // shows the cached list, refreshes behind it
                 RiderHistoryScreen(
                     state = vm.history,
                     error = vm.errors[RiderViewModel.KEY_HISTORY],
@@ -294,9 +294,10 @@ fun RiderRoot(
                     busy = vm.busy,
                     onBack = { nav.popBackStack() },
                     onArrived = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        vm.arrive()
-                        nav.navigate(RiderRoutes.CONFIRM)
+                        vm.arrive {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            nav.navigate(RiderRoutes.CONFIRM)
+                        }
                     },
                     onPosition = { vm.onNavPosition(it) },
                     onRetry = vm::retryNavigation,
@@ -308,8 +309,6 @@ fun RiderRoot(
                     state = vm.confirm,
                     busy = vm.busy,
                     onBack = { nav.popBackStack() },
-                    onAdjust = vm::adjustConfirmed,
-                    onCondition = vm::setCondition,
                     onConfirm = {
                         vm.confirmCollection {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -326,7 +325,7 @@ fun RiderRoot(
                 )
             }
             composable(RiderRoutes.RANKING) {
-                LaunchedEffect(Unit) { vm.loadRanking() }
+                LaunchedEffect(Unit) { vm.loadRanking(force = true) }
                 RiderRankingScreen(
                     state = vm.ranking,
                     error = vm.errors[RiderViewModel.KEY_RANKING],
@@ -335,7 +334,7 @@ fun RiderRoot(
                 )
             }
             composable(RiderRoutes.EARNINGS) {
-                LaunchedEffect(Unit) { vm.loadEarnings() }
+                LaunchedEffect(Unit) { vm.loadEarnings(force = true) }   // the acopio settles while the rider is away
                 RiderEarningsScreen(
                     state = vm.earnings,
                     error = vm.errors[RiderViewModel.KEY_EARNINGS],
@@ -345,7 +344,7 @@ fun RiderRoot(
                 )
             }
             composable(RiderRoutes.DELIVERY) {
-                LaunchedEffect(Unit) { vm.loadDelivery() }
+                LaunchedEffect(Unit) { vm.loadDelivery(force = true) }   // the acopio moves it: en el centro → contando → terminado
                 RiderDeliveryScreen(
                     state = vm.delivery,
                     busy = vm.busy,
@@ -357,6 +356,7 @@ fun RiderRoot(
                     // que es la unica senal de que la carga ya esta en el sistema.
                     onSend = { vm.sendDelivery {} },
                     onRetry = { vm.loadDelivery(force = true) },
+                    onArrivedCenter = vm::markDeliveryArrived,
                 )
             }
             composable(RiderRoutes.EDIT_PROFILE) {
@@ -381,7 +381,7 @@ fun RiderRoot(
                 )
             }
             composable(RiderRoutes.STATS) {
-                LaunchedEffect(Unit) { vm.loadStats() }
+                LaunchedEffect(Unit) { vm.loadStats(force = true) }
                 RiderStatsScreen(
                     state = vm.stats,
                     error = vm.errors[RiderViewModel.KEY_STATS],

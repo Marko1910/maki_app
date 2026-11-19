@@ -54,6 +54,8 @@ import androidx.compose.ui.unit.dp
 import pe.ruma.app.R
 import pe.ruma.app.data.RoutePlanner
 import pe.ruma.app.ui.components.OsmMap
+import pe.ruma.app.ui.components.OsmMarker
+import pe.ruma.app.ui.components.rememberDeviceHeading
 import pe.ruma.app.ui.theme.RumaRadius
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxSize
@@ -80,7 +82,6 @@ private val RiderFrames = listOf(
 )
 
 private val CityFrames = listOf(R.drawable.anim_city_00, R.drawable.anim_city_01, R.drawable.anim_city_02, R.drawable.anim_city_03, R.drawable.anim_city_04, R.drawable.anim_city_05, R.drawable.anim_city_06, R.drawable.anim_city_07, R.drawable.anim_city_08, R.drawable.anim_city_09, R.drawable.anim_city_10, R.drawable.anim_city_11, R.drawable.anim_city_12, R.drawable.anim_city_13, R.drawable.anim_city_14, R.drawable.anim_city_15, R.drawable.anim_city_16, R.drawable.anim_city_17, R.drawable.anim_city_18, R.drawable.anim_city_19, R.drawable.anim_city_20, R.drawable.anim_city_21, R.drawable.anim_city_22, R.drawable.anim_city_23)
-private val PinFrames = listOf(R.drawable.anim_pin_00, R.drawable.anim_pin_01, R.drawable.anim_pin_02, R.drawable.anim_pin_03, R.drawable.anim_pin_04, R.drawable.anim_pin_05, R.drawable.anim_pin_06, R.drawable.anim_pin_07, R.drawable.anim_pin_08, R.drawable.anim_pin_09, R.drawable.anim_pin_10, R.drawable.anim_pin_11, R.drawable.anim_pin_12, R.drawable.anim_pin_13, R.drawable.anim_pin_14, R.drawable.anim_pin_15, R.drawable.anim_pin_16, R.drawable.anim_pin_17, R.drawable.anim_pin_18, R.drawable.anim_pin_19, R.drawable.anim_pin_20, R.drawable.anim_pin_21, R.drawable.anim_pin_22, R.drawable.anim_pin_23)
 
 /** "Remove animations" in the system settings sets the animator scale to 0: then every scene stays still. */
 @Composable
@@ -115,28 +116,27 @@ fun DispatchScene(riderName: String?, modifier: Modifier = Modifier, at: RoutePl
 }
 
 /**
- * A map centred on [at] with the spinning 3D Ruma pin standing on that point (twin of the PWA's PinMap);
- * [radar] adds the pulse a ride app shows while it looks for a driver.
+ * A map centred on [at] with the 3D Ruma pin standing on that point, as a real map marker: it moves with the
+ * map when the family drags it (it used to be a sprite painted over the map's centre, so dragging left it on
+ * the wrong street). The pin turns with the phone's compass instead of spinning on its own: its 24 frames are a
+ * full turn, 15° apart, so the frame shown is the heading. Without a compass (Galaxy A12) it stands still.
  */
+private val PinFrames = listOf(R.drawable.anim_pin_00, R.drawable.anim_pin_01, R.drawable.anim_pin_02, R.drawable.anim_pin_03, R.drawable.anim_pin_04, R.drawable.anim_pin_05, R.drawable.anim_pin_06, R.drawable.anim_pin_07, R.drawable.anim_pin_08, R.drawable.anim_pin_09, R.drawable.anim_pin_10, R.drawable.anim_pin_11, R.drawable.anim_pin_12, R.drawable.anim_pin_13, R.drawable.anim_pin_14, R.drawable.anim_pin_15, R.drawable.anim_pin_16, R.drawable.anim_pin_17, R.drawable.anim_pin_18, R.drawable.anim_pin_19, R.drawable.anim_pin_20, R.drawable.anim_pin_21, R.drawable.anim_pin_22, R.drawable.anim_pin_23)
+
 @Composable
-fun PinMap(at: RoutePlanner.LatLng, modifier: Modifier = Modifier, radar: Boolean = false) {
-    val still = reducedMotion()
-    val pulse = rememberInfiniteTransition(label = "radar")
-    val t by pulse.animateFloat(0f, 1f, infiniteRepeatable(tween(2400, easing = LinearEasing), RepeatMode.Restart), label = "t")
-    Box(modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(RumaRadius.card)), contentAlignment = Alignment.Center) {
-        OsmMap(center = GeoPoint(at.lat, at.lng), zoom = 16.0, modifier = Modifier.fillMaxSize())
-        if (radar) Canvas(Modifier.fillMaxSize()) {
-            for (k in 0..2) {
-                val p = if (still) .5f else (t + k / 3f) % 1f
-                val r = 12.dp.toPx() + 90.dp.toPx() * p
-                drawCircle(RumaColors.Gen.copy(alpha = (if (still) .18f else .3f * (1 - p))), r, center)
-                drawCircle(RumaColors.Gen.copy(alpha = (if (still) .3f else .55f * (1 - p))), r, center, style = Stroke(2.dp.toPx()))
-            }
-        }
-        // The pin's tip sits on the point: the frame's lower part is the tip and its shadow.
-        Sprite(PinFrames, fps = 16, playing = true, modifier = Modifier.width(76.dp).offset(y = (-32).dp))
-    }
+fun PinMap(at: RoutePlanner.LatLng, modifier: Modifier = Modifier) {
+    val heading = rememberDeviceHeading()
+    val frame = heading?.let { (it / (360f / PinFrames.size)).roundToInt() % PinFrames.size } ?: 0
+    val point = GeoPoint(at.lat, at.lng)
+    OsmMap(
+        center = point, zoom = 17.0,
+        markers = listOf(OsmMarker(point, iconRes = PinFrames[frame], tipY = PIN_TIP_Y)),
+        modifier = modifier.fillMaxWidth().height(190.dp).clip(RoundedCornerShape(RumaRadius.card)),
+    )
 }
+
+/** The pin's tip sits at 78 % of its frame's height (measured on anim_pin_00: opaque rows 41-124 of 160). */
+private const val PIN_TIP_Y = 0.78f
 
 @Composable
 @Suppress("UNUSED_PARAMETER")

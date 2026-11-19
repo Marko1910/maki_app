@@ -3,6 +3,12 @@ package pe.ruma.app.data
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 /** High-level data access for the app. */
 object RumaRepository {
@@ -108,7 +114,7 @@ object RumaRepository {
     suspend fun loadGeneratorProfile(): GeneratorProfileDto? {
         val id = uid ?: return null
         val select = "points_balance,points_pending,cash_earned_total,current_streak_days," +
-            "co2_avoided_kg,recycled_kg,water_saved_l,trees_equivalent,profiles(display_name,full_name)"
+            "co2_avoided_kg,recycled_kg,water_saved_l,trees_equivalent,profiles(display_name,full_name,ruma_code)"
         val dto = list("generator_profiles?profile_id=eq.$id&select=$select", GeneratorProfileDto.serializer())
             .firstOrNull()
         if (dto != null) {
@@ -230,7 +236,7 @@ object RumaRepository {
         "id,code,status,scheduled_date,window_label,eta_minutes,generator_points_awarded,generator_points_final,rider_id," +
             "created_at,requested_at,assigned_at,started_at,arrived_at,completed_at,cancelled_at,cancel_reason," +
             "latitude,longitude,distance_m," +
-            "pickup_items(reported_quantity,confirmed_quantity,condition,points,materials(id,name,code,icon))," +
+            "pickup_items(reported_quantity,confirmed_quantity,condition,weight_kg,points,materials(id,name,code,icon,avg_weight_kg))," +
             "rider:profiles!pickups_rider_id_fkey(display_name,phone)," +
             "address:addresses!pickups_address_id_fkey(address_line,latitude,longitude)"
 
@@ -363,11 +369,11 @@ object RumaRepository {
     // ---- Rider (dashboard + collection flow) ----
 
     private const val RIDER_PICKUP_SELECT =
-        "id,code,status,scheduled_date,window_label,eta_minutes,rider_earnings,total_weight_kg," +
+        "id,code,status,scheduled_date,window_label,priority,eta_minutes,rider_earnings,total_weight_kg," +
             "generator_points_awarded,rider_id,created_at,completed_at," +
             "match_status,condition,notes,cancel_reason,latitude,longitude,distance_m," +
-            "pickup_items(reported_quantity,confirmed_quantity,condition,points,materials(id,name,code,icon))," +
-            "generator:profiles!pickups_generator_id_fkey(display_name,phone)," +
+            "pickup_items(reported_quantity,confirmed_quantity,condition,weight_kg,points,materials(id,name,code,icon,avg_weight_kg))," +
+            "generator:profiles!pickups_generator_id_fkey(display_name,phone,ruma_code)," +
             "address:addresses!pickups_address_id_fkey(address_line,reference,latitude,longitude)"
 
     /** Unassigned requests a rider can take (RLS already scopes visibility). */
@@ -414,6 +420,11 @@ object RumaRepository {
     }
 
     /** Advances the rider's own pickup along the route (en_route / collecting …). */
+    /** "Llegué al acopio": the rider (or the center's operator) marks the load as delivered to the center. */
+    suspend fun markDeliveryArrived(deliveryId: String) {
+        RumaApi.post("rpc/mark_delivery_arrived", """{"p_delivery_id":"$deliveryId"}""")
+    }
+
     suspend fun setPickupStatus(pickupId: String, status: String) {
         RumaApi.patch("pickups?id=eq.$pickupId", """{"status":"$status"}""")
     }
@@ -449,6 +460,19 @@ object RumaRepository {
      * Saves the name every other screen shows. RLS limits the row to the caller,
      * so no id travels in the body: the URL already says whose profile this is.
      */
+    /** The signed-in account's mobile number, or null when it has none. */
+    suspend fun loadMyPhone(): String? {
+        val id = uid ?: return null
+        val rows = RumaApi.json.parseToJsonElement(RumaApi.getRaw("profiles?id=eq.$id&select=phone")).jsonArray
+        return rows.firstOrNull()?.jsonObject?.get("phone")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+    }
+
+    /** Saves only the mobile number (asked on the pickup form when the account has none). */
+    suspend fun updateMyPhone(phone: String) {
+        val id = uid ?: return
+        RumaApi.patch("profiles?id=eq.$id", buildJsonObject { put("phone", phone) }.toString())
+    }
+
     suspend fun updateMyProfile(displayName: String, phone: String?) {
         val id = uid ?: return
         val body = RumaApi.json.encodeToString(
@@ -719,7 +743,7 @@ object RumaRepository {
         val id = uid ?: return emptyList()
         return list(
             "deliveries?rider_id=eq.$id&select=id,code,status,total_kg,rider_amount," +
-                "departed_at,settled_at,center:collection_centers(name),delivery_pickups(pickup_id)" +
+                "departed_at,arrived_at,settled_at,center:collection_centers(name),delivery_pickups(pickup_id)" +
                 "&order=created_at.desc&limit=$limit",
             DeliveryDto.serializer(),
         )
@@ -763,7 +787,7 @@ object RumaRepository {
                 "&select=id,status,route_date,total_stops,total_distance_m,total_duration_min," +
                 "route_stops(sequence,status,eta_minutes,distance_from_prev_m," +
                 "pickups(id,code,status,window_label,eta_minutes,latitude,longitude,distance_m," +
-                "pickup_items(reported_quantity,confirmed_quantity,condition,points,materials(id,name,code,icon))," +
+                "pickup_items(reported_quantity,confirmed_quantity,condition,weight_kg,points,materials(id,name,code,icon,avg_weight_kg))," +
                 "generator:profiles!pickups_generator_id_fkey(display_name)," +
                 "address:addresses!pickups_address_id_fkey(address_line,reference,latitude,longitude)))" +
                 "&order=created_at.desc&limit=1",

@@ -119,15 +119,27 @@ const liveTitle = (live: Row) => !live.rider?.display_name ? STATUS[live.status]
  * "Siguiente mejor acción": one card that says what is worth doing now and one button that does
  * it. It replaces the fixed "Registrar residuos" and the separate live-pickup row.
  */
+/** "Tu siguiente paso" steps aside once used (it blocked the home's view) until a different step comes. */
+const stepKey = (s: NextStep) => `${s.kind}|${s.title}`;
+const usedStepKey = () => `ruma.step.${myId() ?? "anon"}`;
+function readUsedStep() { try { return localStorage.getItem(usedStepKey()); } catch { return null; } }
+
 function NextStepCard({ step }: { step: NextStep }) {
   const nav = useNavigate();
+  const [used, setUsed] = useState(readUsedStep);
+  if (used === stepKey(step)) return null;
+  const go = () => {
+    try { localStorage.setItem(usedStepKey(), stepKey(step)); } catch { /* private mode: it just shows again */ }
+    setUsed(stepKey(step));
+    nav(step.to);
+  };
   const icon = step.kind === "live" || step.kind === "pickup" ? "bike" : step.kind === "cash" ? "wallet" : "camera";
   return (
     <section className="glass pad stack next-step" key={step.kind}>
       <div className="between"><p className="t-over accent">Tu siguiente paso</p>{step.kind === "live" && <span className="chip chip-live"><i />EN VIVO</span>}</div>
       <p className="t-card">{step.title}</p>
       {step.body && <p className="muted">{step.body}</p>}
-      <button className="btn btn-primary" onClick={() => nav(step.to)}><Icon name={icon} /> {step.action}</button>
+      <button className="btn btn-primary" onClick={go}><Icon name={icon} /> {step.action}</button>
     </section>
   );
 }
@@ -417,6 +429,7 @@ export function FamilyProfile() {
           <span className="chip-hero chip" style={{ width: 56, height: 56, justifyContent: "center", fontSize: 20 }}>{initials(name)}</span>
           <div className="min0"><p className="t-card">{name}</p>{address && <p className="soft t-small">{address.address_line}</p>}</div>
         </div>
+        {p?.profiles?.ruma_code && <div className="hero-rule"><p className="t-over">Tu código de saco</p><p className="t-hero" style={{ letterSpacing: 1 }}>{p.profiles.ruma_code}</p><p className="soft t-small">Escríbelo en tu saco con plumón. El acopio pesa y verifica tu saco por este código.</p></div>}
         <div className="hero-rule" style={{ display: "flex", justifyContent: "flex-end" }}><button className="chip chip-hero" style={{ minHeight: 48 }} onClick={() => nav("/f/editar")}><Icon name="edit" size={16} /> Editar perfil</button></div>
       </section>
       <p className="t-over">Tu cuenta en números</p>

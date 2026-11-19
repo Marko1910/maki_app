@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Empty, Failure, Loading, RumaMap, TopBar, type MapPin } from "../../components/ui";
+import { Empty, Failure, Skeleton, RumaMap, TopBar, type MapPin } from "../../components/ui";
 import { loadCenters, loadPrices, type Row } from "../../lib/api";
 import { soles, useAsync } from "../../lib/util";
 
@@ -21,7 +21,7 @@ export function Centers() {
   return (
     <main className="screen">
       <TopBar title="Puntos de Acopio" />
-      {loading ? <Loading text="Cargando puntos de acopio…" /> : error ? <Failure text={error} retry={() => void reload()} /> : <>
+      {loading ? <Skeleton label="Cargando puntos de acopio…" blocks={[200, 88, 88, 88]} /> : error ? <Failure text={error} retry={() => void reload()} /> : <>
         {pins.length > 0 && <RumaMap pins={pins} focus={chosen ? { lat: chosen.latitude, lng: chosen.longitude } : null} />}
         {!!data?.prices.length && <section className="glass pad stack">
           <h2 className="t-card">Precios de hoy</h2>

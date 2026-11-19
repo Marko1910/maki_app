@@ -1,7 +1,5 @@
 package pe.ruma.app.ui.screens.rider
 
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,13 +16,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import pe.ruma.app.ui.components.DetailHeader
-import pe.ruma.app.ui.components.FilterPill
 import pe.ruma.app.ui.components.GlassBadge
 import pe.ruma.app.ui.components.HeroRule
 import pe.ruma.app.ui.components.RumaBottomAction
 import pe.ruma.app.ui.components.RumaList
 import pe.ruma.app.ui.components.RumaRow
-import pe.ruma.app.ui.components.RumaStepper
 import pe.ruma.app.ui.components.PrimaryButton
 import pe.ruma.app.ui.components.SectionLabel
 import pe.ruma.app.ui.components.SoftCard
@@ -37,7 +33,7 @@ import pe.ruma.app.ui.theme.RumaSpace
 import pe.ruma.app.ui.theme.RumaType
 
 /**
- * One material at the door. [materialId] blank = nothing to count (a pickup with
+ * One material at the door. [materialId] blank = nothing to weigh (a pickup with
  * no declared items): the row is informational only.
  */
 data class ConfirmMaterialUi(
@@ -46,20 +42,19 @@ data class ConfirmMaterialUi(
     val points: String,
     val materialId: String = "",
     val declared: Int = 0,
-    val confirmed: Int = 0,
     /** Catalogue code ("PET"), shown in the row's badge as on the PWA. */
     val code: String = "",
-    /** limpia | aplastada | sucia */
-    val condition: String = "limpia",
 )
 
 data class RiderConfirmUiState(
+    /** The family's sack code: the rider checks the label before taking the sack. */
+    val sackCode: String = "RU-7K3Q9A",
     val stopName: String = "Fam. Nureña",
     val address: String = "Jr. Las Flores 123",
     val streak: String = "Hoy 3:00 - 6:00 pm",
     val materials: List<ConfirmMaterialUi> = listOf(
-        ConfirmMaterialUi("Plástico PET", "La familia declaró 8", "+80 pts", "pet", 8, 8, "PET"),
-        ConfirmMaterialUi("Latas de aluminio", "La familia declaró 3", "+18 pts", "alu", 3, 2, "ALU"),
+        ConfirmMaterialUi("Plástico PET", "La familia declaró 40", "+400 pts", "pet", 40, "PET"),
+        ConfirmMaterialUi("Latas de aluminio", "La familia declaró 12", "+120 pts", "alu", 12, "ALU"),
     ),
     val totalWeight: String = "—",
     val totalPoints: String = "98 pts",
@@ -67,18 +62,16 @@ data class RiderConfirmUiState(
 )
 
 /**
- * The rider counts what is really in the bag. The family's number is the
- * starting point, not the answer; the counted one is what gets recorded.
- * Laid out like the PWA's: the stop, one list with a counter per material, what
- * the rider earns as the hero, and the confirmation pinned above the system bar.
+ * The rider only receives the labelled sack (2026-11-18, docs/debate-quien-mide.md): no scale and no
+ * counting at the door. The acopio weighs every sack by its code and counts by hand only the ones whose
+ * weight doesn't back what the family declared. Laid out like the PWA's: the sack code, what the family
+ * declared, what the rider earns as the hero, and "Recibí el saco" pinned above the system bar.
  */
 @Composable
 fun RiderConfirmScreen(
     state: RiderConfirmUiState = RiderConfirmUiState(),
     busy: Boolean = false,
     onBack: () -> Unit = {},
-    onAdjust: (materialId: String, delta: Int) -> Unit = { _, _ -> },
-    onCondition: (materialId: String, condition: String) -> Unit = { _, _ -> },
     onConfirm: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().rumaScreen(RumaColors.Rider).statusBarsPadding()) {
@@ -90,22 +83,26 @@ fun RiderConfirmScreen(
         ) {
             item {
                 SoftCard(Modifier.fillMaxWidth(), gap = RumaSpace.xs) {
+                    if (state.sackCode.isNotBlank()) {
+                        Text("SACO ${state.sackCode}", color = RumaColors.Rider, style = RumaType.cardTitle)
+                        Text("Revisa que el saco tenga este código antes de llevarlo.", color = RumaColors.Text2, style = RumaType.bodySmall)
+                    }
                     Text(state.stopName, color = RumaColors.Text, style = RumaType.rowTitle)
                     Text(state.address, color = RumaColors.Text2, style = RumaType.bodySmall)
                     Text(state.streak, color = RumaColors.Text2, style = RumaType.bodySmall)
                 }
             }
-            item { SectionLabel("Cuenta lo que recibes") }
+            item { SectionLabel("Lo que declaró la familia") }
             item {
                 if (state.materials.isEmpty()) {
                     Text("No hay materiales declarados", color = RumaColors.Text2, style = RumaType.body)
                 } else {
-                    RumaList(state.materials) { MaterialRow(it, onAdjust, onCondition) }
+                    RumaList(state.materials) { MaterialRow(it) }
                 }
             }
             item {
                 Text(
-                    "Lo que cuentes aquí es lo que se registra: los puntos del vecino y tu pago salen de este número.",
+                    "No necesitas pesar ni contar: lleva el saco al acopio. Allí lo pesan y verifican, y de ahí salen los puntos del vecino.",
                     color = RumaColors.Text2, style = RumaType.bodySmall,
                 )
             }
@@ -113,7 +110,7 @@ fun RiderConfirmScreen(
         }
         RumaBottomAction {
             PrimaryButton(
-                if (busy) "Confirmando…" else "Confirmar recolección",
+                if (busy) "Confirmando…" else state.sackCode.takeIf { it.isNotBlank() }?.let { "Recibí el saco $it" } ?: "Recibí el saco",
                 Modifier.fillMaxWidth(), icon = Icons.Filled.Check,
                 color = RumaColors.Rider, enabled = !busy, onClick = onConfirm,
             )
@@ -122,45 +119,16 @@ fun RiderConfirmScreen(
 }
 
 @Composable
-private fun MaterialRow(material: ConfirmMaterialUi, onAdjust: (String, Int) -> Unit, onCondition: (String, String) -> Unit) {
-    val diff = material.confirmed - material.declared
-    // The state pills get their own line: beside the stepper they were cut to "Aplas" on a 360 dp phone.
-    Column(verticalArrangement = Arrangement.spacedBy(RumaSpace.xs)) {
+private fun MaterialRow(material: ConfirmMaterialUi) {
     RumaRow(
         material.name,
         subtitle = material.detail,
         leading = { GlassBadge(text = material.code.take(3).ifBlank { material.name.take(3).uppercase() }) },
-        extra = if (material.materialId.isNotBlank()) {
-            {
-                if (diff != 0) Text(if (diff < 0) "Faltan ${-diff}" else "Sobran $diff", color = RumaColors.Streak, style = RumaType.label)
-            }
+        trailing = if (material.materialId.isBlank()) {
+            { Text(material.points, color = RumaColors.Money, style = RumaType.rowTitle) }
         } else null,
-        trailing = {
-            if (material.materialId.isBlank()) {
-                Text(material.points, color = RumaColors.Money, style = RumaType.rowTitle)
-            } else {
-                RumaStepper(
-                    material.confirmed, material.name,
-                    onMinus = { onAdjust(material.materialId, -1) },
-                    onPlus = { onAdjust(material.materialId, +1) },
-                )
-            }
-        },
     )
-    if (material.materialId.isNotBlank()) {
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = RumaSpace.md),
-            horizontalArrangement = Arrangement.spacedBy(RumaSpace.xs),
-        ) {
-            CONDITIONS.forEach { (key, label) ->
-                FilterPill(label, selected = material.condition == key, accent = RumaColors.Rider) { onCondition(material.materialId, key) }
-            }
-        }
-    }
-    }
 }
-
-private val CONDITIONS = listOf("limpia" to "Limpia", "aplastada" to "Aplastada", "sucia" to "Con líquido")
 
 /** What this stop pays the rider: the one figure the screen is about (PWA "Ganarás"). */
 @Composable
@@ -183,7 +151,7 @@ private fun EarningsHero(state: RiderConfirmUiState) {
             }
         }
         Text(
-            "S/ 0,35 por kg pesado + S/ 6 por ruta de 12 recojos. Los puntos del vecino se confirman en el acopio.",
+            "S/ 0,35 por kg pesado en el acopio + S/ 6 por ruta de 12 recojos. Los puntos del vecino los verifica el acopio.",
             color = RumaColors.OnRiderSoft, style = RumaType.bodySmall,
         )
     }

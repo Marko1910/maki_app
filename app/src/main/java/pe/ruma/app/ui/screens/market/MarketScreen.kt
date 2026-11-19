@@ -33,7 +33,7 @@ import pe.ruma.app.ui.components.HeroRule
 import pe.ruma.app.ui.components.RumaEmpty
 import pe.ruma.app.ui.components.RumaError
 import pe.ruma.app.ui.components.RumaList
-import pe.ruma.app.ui.components.RumaLoading
+import pe.ruma.app.ui.components.RumaSkeleton
 import pe.ruma.app.ui.components.RumaRow
 import pe.ruma.app.ui.components.ScreenHeader
 import pe.ruma.app.ui.components.SectionLabel
@@ -105,7 +105,7 @@ fun MarketScreen(
         ) {
             when {
                 error != null -> item { RumaError(error, onRetry, accent = accent) }
-                state == null -> item { RumaLoading("Consultando el mercado…", accent = accent) }
+                state == null -> item { RumaSkeleton(listOf(120.dp, 64.dp, 64.dp, 64.dp, 96.dp), label = "Consultando el mercado…") }
                 state.quotes.isEmpty() && state.news.isEmpty() -> item {
                     RumaEmpty(
                         icon = Icons.Filled.Storefront,

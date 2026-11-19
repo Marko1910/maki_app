@@ -4,6 +4,7 @@ import { Field, Icon, Logo, LogoPlate, TopBar } from "../../components/ui";
 import { cleanCode, clearRef, savedRef } from "../../lib/referral";
 import { humanize, pendingAddress, setPendingAddress, signIn, signUp } from "../../lib/api";
 import { here } from "../../lib/util";
+import { normalizePhone, PHONE_HINT } from "../../lib/phone";
 
 export function Splash() {
   return (
@@ -170,6 +171,7 @@ export function Register() {
   const [error, setError] = useState<string | null>(null);
   const [confirmEmail, setConfirmEmail] = useState(false);
   const [refCode, setRefCode] = useState(savedRef);
+  const [phone, setPhone] = useState("");
 
   const locate = async () => {
     const fix = await here();
@@ -178,9 +180,11 @@ export function Register() {
   };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const tel = normalizePhone(phone);
+    if (!tel) { setError(PHONE_HINT); return; }
     setBusy(true); setError(null);
     try {
-      const signedIn = await signUp(email, password, role, name, isRider || !address.trim() ? null : { line: address.trim(), lat: coords.lat, lng: coords.lng }, isRider ? "" : refCode);
+      const signedIn = await signUp(email, password, role, name, isRider || !address.trim() ? null : { line: address.trim(), lat: coords.lat, lng: coords.lng }, isRider ? "" : refCode, tel);
       clearRef();
       if (!signedIn) { setConfirmEmail(true); setBusy(false); }
     } catch (err) { setError(humanize(err)); setBusy(false); }
@@ -205,6 +209,8 @@ export function Register() {
         <div className="glass pad stack" style={{ gap: 16 }}>
           <Field label="Nombre" required autoComplete="name" placeholder={isRider ? "Carlos Ramos" : "Ana Quispe"} value={name} onChange={(e) => setName(e.target.value)} />
           <Field label="Correo" type="email" required autoComplete="email" inputMode="email" placeholder="tucorreo@ejemplo.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Field label="Celular" type="tel" required autoComplete="tel" inputMode="tel" placeholder="987 654 321" value={phone} onChange={(e) => setPhone(e.target.value)}
+            helper={isRider ? "Las familias podrán llamarte cuando vayas en camino." : "El Eco-Rider te llamará si no encuentra tu casa."} />
           <Field label="Contraseña" required minLength={6} autoComplete="new-password" type={show ? "text" : "password"} placeholder="Mínimo 6 caracteres" value={password} onChange={(e) => setPassword(e.target.value)}
             right={<button type="button" className="ghost-btn" aria-label={show ? "Ocultar contraseña" : "Mostrar contraseña"} onClick={() => setShow(!show)}><Icon name="eye" /></button>} />
           {!isRider && <Field label="Dirección de recojo" required autoComplete="street-address" placeholder="Jr. Las Flores 123, SJL" value={address} onChange={(e) => setAddress(e.target.value)}

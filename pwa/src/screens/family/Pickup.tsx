@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Empty, Failure, Icon, NavRow, Skeleton, RumaMap, StepDots, PointsRule, Stepper, TopBar, useToast, type MapPin } from "../../components/ui";
-import { ACTIVE, assignNearestRider, cancelPickup, createPickup, createPickupFromDetection, humanize, loadSavedPile, loadMaterials, loadPickups, loadPrimaryAddress, loadRiderPosition, loadRiderProfile, loadTrackedPickup, savePrimaryAddress, updateReportedQuantities, type Row } from "../../lib/api";
+import { ACTIVE, assignNearestRider, cancelPickup, createPickup, createPickupFromDetection, humanize, loadGeneratorProfile, loadMyProfile, loadSavedPile, updateMyPhone, loadMaterials, loadPickups, loadPrimaryAddress, loadRiderPosition, loadRiderProfile, loadTrackedPickup, savePrimaryAddress, updateReportedQuantities, type Row } from "../../lib/api";
 import { ago, clock, distanceKm, here, initials, int, isoDate, meters, ptsToSoles, windowText, pickupLatLng, STATUS, streetRoute, useAsync, useInterval, VEHICLE, type LatLng, type RoadRoute } from "../../lib/util";
 import { DispatchScene, PinMap } from "../../components/Dispatch";
 import { PushCard } from "../../components/Push";
 import { pileCounts } from "../../lib/pile";
+import { normalizePhone, PHONE_HINT } from "../../lib/phone";
 import { useScan } from "./Scan";
 import { goBack, returnHome, tick } from "../../lib/flow";
 
@@ -24,8 +25,8 @@ export function PickupForm() {
   const toast = useToast();
   const { scan, setScan } = useScan();
   const { data, loading, error, reload } = useAsync(async () => {
-    const [address, materials, pile] = await Promise.all([loadPrimaryAddress(), loadMaterials(), loadSavedPile().catch(() => [] as Row[])]);
-    return { address, materials, pile };
+    const [address, materials, pile, me, gp] = await Promise.all([loadPrimaryAddress(), loadMaterials(), loadSavedPile().catch(() => [] as Row[]), loadMyProfile().catch(() => null), loadGeneratorProfile().catch(() => null)]);
+    return { address, materials, pile, hasPhone: !!me?.phone, sackCode: (gp?.profiles?.ruma_code as string | undefined) ?? null };
   });
   const [counts, setCounts] = useState<Record<string, number>>({});
   const windows = useMemo(openWindows, []);
@@ -36,6 +37,7 @@ export function PickupForm() {
   const [editing, setEditing] = useState(false);
   const [line, setLine] = useState("");
   const [busy, setBusy] = useState(false);
+  const [phone, setPhone] = useState("");
 
   useEffect(() => { void here().then((p) => { setFix(p); setGps(p ? "ok" : "none"); }); }, []);
   useEffect(() => {
@@ -54,8 +56,12 @@ export function PickupForm() {
     const selections = Object.entries(counts).filter(([, n]) => n > 0) as [string, number][];
     if (!selections.length) return toast("Agrega al menos un material al recojo.");
     if (!line.trim()) return toast("Escribe la dirección de recojo.");
+    // The database refuses it too (require_pickup_contact); asking here keeps the family on the form.
+    const tel = data?.hasPhone ? null : normalizePhone(phone);
+    if (!data?.hasPhone && !tel) return toast(PHONE_HINT);
     setBusy(true);
     try {
+      if (tel) await updateMyPhone(tel);
       let addressId: string | null = data?.address?.id ?? null;
       if (line.trim() !== (data?.address?.address_line ?? "")) {
         await savePrimaryAddress(addressId, line.trim(), fix?.lat, fix?.lng);
@@ -96,6 +102,10 @@ export function PickupForm() {
           {!shown.length && <div className="muted">No hay ítems para recoger</div>}
         </div>
 
+        {data?.sackCode && <section className="glass pad stack" style={{ gap: 4 }}>
+          <p className="t-row">Escribe {data.sackCode} en tu saco</p>
+          <p className="muted t-small">El Eco-Rider recoge tu saco y el acopio lo pesa y verifica por ese código. Ahí se acreditan tus puntos.</p>
+        </section>}
         <p className="t-over">Punto de recojo</p>
         {(fix || data?.address?.latitude != null) && <PinMap at={fix ?? { lat: data!.address.latitude, lng: data!.address.longitude }} />}
         <div className="glass pad stack">
@@ -109,6 +119,13 @@ export function PickupForm() {
           </div>
         </div>
 
+        {data && !data.hasPhone && <>
+          <p className="t-over">Tu celular</p>
+          <label className="glass pad field">
+            <span className="input-wrap"><input type="tel" inputMode="tel" autoComplete="tel" aria-label="Tu celular" placeholder="987 654 321" value={phone} onChange={(e) => setPhone(e.target.value)} /></span>
+            <span className="muted t-small">El Eco-Rider te llamará si no encuentra tu casa. Lo guardamos en tu perfil.</span>
+          </label>
+        </>}
         <p className="t-over">Ventana horaria</p>
         <div className="grid2">{["Hoy", "Mañana"].map((d) => {
           const none = !windows.some((w) => w.day === d);
@@ -117,7 +134,7 @@ export function PickupForm() {
         <div className="stack" role="radiogroup" aria-label="Horario">
           {options.map((w, i) => <button key={w.time} role="radio" aria-checked={windowIx === i} className="glass choice" onClick={() => setWindowIx(i)}><span className="min0 t-row">{w.time}</span><span className="radio" /></button>)}
         </div>
-        <p className="muted t-small">Tus puntos se acreditan cuando el acopio pese tu material, después del recojo.</p>
+        <p className="muted t-small">El acopio pesa y verifica tu saco: ahí se acreditan tus puntos y puedes cobrarlos.</p>
         <div className="bottombar"><div><button className="btn btn-primary" disabled={busy} onClick={() => void confirm()}>{busy ? "Procesando…" : "Confirmar recojo"}</button></div></div>
       </>}
     </main>

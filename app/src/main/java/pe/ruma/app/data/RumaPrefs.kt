@@ -29,6 +29,13 @@ object RumaPrefs {
     fun readWeeklyGoal(userId: String?): Int =
         (if (ready) prefs.getInt("ruma.goal.${userId ?: "anon"}", DEFAULT_WEEKLY_GOAL) else DEFAULT_WEEKLY_GOAL).takeIf { it in 1..7 } ?: DEFAULT_WEEKLY_GOAL
 
+    /** The home's "Tu siguiente paso" the family already acted on: hidden until a different step comes. */
+    fun readUsedStep(userId: String?): String? = if (ready) prefs.getString("ruma.step.${userId ?: "anon"}", null) else null
+
+    fun writeUsedStep(userId: String?, key: String) {
+        if (ready) prefs.edit().putString("ruma.step.${userId ?: "anon"}", key).apply()
+    }
+
     fun writeWeeklyGoal(userId: String, days: Int) {
         require(days in 1..7)
         if (ready) prefs.edit().putInt("ruma.goal.$userId", days).apply()

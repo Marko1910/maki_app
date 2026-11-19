@@ -1,14 +1,18 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bars, Empty, Failure, Icon, Metric, NavRow, Skeleton, TopBar, useToast } from "../../components/ui";
-import { createDelivery, humanize, loadCenters, loadMyAchievements, loadMyDeliveries, loadRiderEarnings, loadRiderHistory, loadUndeliveredPickups, signOut, type Row } from "../../lib/api";
+import { createDelivery, humanize, markDeliveryArrived, loadCenters, loadMyAchievements, loadMyDeliveries, loadRiderEarnings, loadRiderHistory, loadUndeliveredPickups, signOut, type Row } from "../../lib/api";
 import { ago, dayGroup, initials, kg, sameDay, soles, STATUS, stopAddress, useAsync, VEHICLE } from "../../lib/util";
 import { Leaderboard } from "../family/Family";
 import { useRider } from "./Work";
 
 export const RiderRanking = () => <Leaderboard role="eco_rider" title="Ranking de riders" />;
 
-const DELIVERY_STATUS: Record<string, string> = { en_camino: "En camino al acopio", recibida: "Recibida · falta el pesaje", pesada: "Pesada · esperando liquidación", liquidada: "Liquidada · te pagaron" };
+/** What the rider reads (2026-11-19): four steps, the same words the notifications use. Twin of deliveryStatusLabel. */
+const deliveryStatus = (d: Row) => ({
+  en_camino: d.arrived_at ? "En el centro de acopio" : "En camino al acopio",
+  recibida: "Contando", pesada: "Contando", liquidada: "Terminado · pago en proceso", rechazada: "Rechazada por el acopio",
+} as Record<string, string>)[d.status] ?? d.status;
 
 /* ---------- Deliver to the collection center ---------- */
 
@@ -21,6 +25,12 @@ export function Delivery() {
   const [off, setOff] = useState<Set<string>>(new Set());
   const [center, setCenter] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const arrived = async (id: string) => {
+    setBusy(true);
+    try { await markDeliveryArrived(id); toast("Listo: el acopio sabe que tu carga llegó. Te avisaremos cuando la cuenten."); await reload(true); }
+    catch (e) { toast(humanize(e)); }
+    finally { setBusy(false); }
+  };
   const chosen = (data?.load ?? []).filter((p) => !off.has(p.id));
   const toggle = (id: string) => { const n = new Set(off); if (n.has(id)) n.delete(id); else n.add(id); setOff(n); };
   const send = async () => {
@@ -61,8 +71,10 @@ export function Delivery() {
         {!!data?.past.length && <>
           <p className="t-over">Entregas anteriores</p>
           <div className="glass list">{data.past.map((d: Row) => <div key={d.id}>
-            <span className="min0"><span className="t-row" style={{ display: "block" }}>{d.code ?? "Entrega"}</span><span className="muted t-small">{DELIVERY_STATUS[d.status] ?? d.status}{d.center?.name ? ` · ${d.center.name}` : ""}</span></span>
+            <span className="min0"><span className="t-row" style={{ display: "block" }}>{d.code ?? "Entrega"}</span><span className="muted t-small">{deliveryStatus(d)}{d.center?.name ? ` · ${d.center.name}` : ""}</span></span>
             {d.rider_amount > 0 && <span className="money" style={{ flex: "none" }}>{soles(d.rider_amount)}</span>}
+            {d.status === "en_camino" && !d.arrived_at && <button className="btn btn-secondary btn-small" style={{ flexBasis: "100%" }} disabled={busy}
+              onClick={() => void arrived(d.id)}>Llegué al acopio · dejé la carga</button>}
           </div>)}</div>
         </>}
       </>}

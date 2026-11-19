@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Empty, Failure, Field, Icon, Loading, NavRow, StepDots, TopBar, useToast } from "../../components/ui";
+import { Empty, Failure, Field, Icon, Skeleton, NavRow, StepDots, TopBar, useToast } from "../../components/ui";
 import { applyReferralCode, humanize, loadReferralSummary, myId } from "../../lib/api";
 import { IS_STAGING } from "../../lib/config";
 import { captureRef, claimInvitePrompt, cleanCode, clearRef, inviteLine, inviteMessage, savedRef, type Invite as InviteRow } from "../../lib/referral";
@@ -30,7 +30,7 @@ export function Invite() {
     catch { toast(`Tu código es ${s!.code}`); }
   };
 
-  if (loading && !s) return <main className="screen"><TopBar title="Invita y gana" /><Loading text="Cargando tu código…" /></main>;
+  if (loading && !s) return <main className="screen"><TopBar title="Invita y gana" /><Skeleton label="Cargando tu código…" blocks={[168, 56, 72, 72]} /></main>;
   if (!s) return <main className="screen"><TopBar title="Invita y gana" /><Failure text={error ?? "No pudimos cargar tus invitaciones."} retry={() => void reload()} /></main>;
 
   const invites: InviteRow[] = s.invites ?? [];

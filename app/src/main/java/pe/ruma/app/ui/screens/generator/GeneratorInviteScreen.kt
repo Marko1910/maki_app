@@ -52,7 +52,7 @@ import pe.ruma.app.ui.components.RumaEmpty
 import pe.ruma.app.ui.components.RumaError
 import pe.ruma.app.ui.components.RumaInputField
 import pe.ruma.app.ui.components.RumaList
-import pe.ruma.app.ui.components.RumaLoading
+import pe.ruma.app.ui.components.RumaSkeleton
 import pe.ruma.app.ui.components.RumaRow
 import pe.ruma.app.ui.components.PrimaryButton
 import pe.ruma.app.ui.components.SecondaryButton
@@ -199,7 +199,7 @@ private fun InviteContent(
         item { DetailHeader("Invita y gana", onBack, subtitle = "Recicla con tus vecinos") }
         val s = summary
         when {
-            s == null && loading -> item { RumaLoading("Cargando tu código…") }
+            s == null && loading -> item { RumaSkeleton(listOf(168.dp, 56.dp, 72.dp, 72.dp), label = "Cargando tu código…") }
             s == null -> item { RumaError(error ?: "No pudimos cargar tus invitaciones.", onRetry) }
             else -> {
                 item {

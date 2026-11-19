@@ -61,7 +61,7 @@ import pe.ruma.app.ui.components.PrimaryButton
 import pe.ruma.app.ui.theme.RumaTheme
 import androidx.compose.material.icons.filled.Storefront
 import pe.ruma.app.ui.components.RumaEmpty
-import pe.ruma.app.ui.components.RumaLoading
+import pe.ruma.app.ui.components.RumaSkeleton
 import pe.ruma.app.ui.theme.RumaColors
 import pe.ruma.app.ui.theme.RumaType
 import org.osmdroid.util.GeoPoint
@@ -118,7 +118,7 @@ fun GeneratorCentersScreen(
             }
             if (prices.isNotEmpty()) PricesCard(prices)
             when {
-                centers == null -> RumaLoading("Cargando puntos de acopio…", accent = RumaColors.Gen)
+                centers == null -> RumaSkeleton(listOf(200.dp, 88.dp, 88.dp, 88.dp), label = "Cargando puntos de acopio…")
                 centers.isEmpty() -> RumaEmpty(
                     icon = Icons.Filled.Storefront,
                     title = "Aún no hay acopios cerca",

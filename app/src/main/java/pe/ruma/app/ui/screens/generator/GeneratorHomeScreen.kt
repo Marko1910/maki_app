@@ -58,7 +58,6 @@ import pe.ruma.app.data.rumaLevel
 import pe.ruma.app.navigation.GenRoutes
 import pe.ruma.app.ui.components.rumaCard
 import pe.ruma.app.ui.components.RumaError
-import pe.ruma.app.ui.components.RumaLoading
 import pe.ruma.app.ui.components.RumaSkeleton
 import pe.ruma.app.ui.components.rumaOutlined
 import androidx.compose.animation.core.Animatable
@@ -112,7 +111,9 @@ fun GeneratorHomeScreen(
     creditedGain: Int = 0,
     onCreditedSeen: () -> Unit = {},
     /** The home's one next step; null keeps the plain "Registrar residuos". */
+    /** Null hides the card: the family already used this step (it comes back when the step changes). */
     nextStep: NextStep? = null,
+    onNextStepUsed: (NextStep) -> Unit = {},
     /** A pickup just asked for: a short, non-blocking "va en camino"; null hides it. */
     dispatch: DispatchUi? = null,
     onDispatchSeen: () -> Unit = {},
@@ -154,11 +155,11 @@ fun GeneratorHomeScreen(
                 if (invitePrompt) item(key = "invite") {
                     InvitePromptCard(onOpen = { onNavigate(GenRoutes.INVITE) }, onDismiss = onInviteDismiss)
                 }
-                item(key = "next") { NextStepCard(nextStep ?: nextStep(null), onNavigate) }
+                if (nextStep != null) item(key = "next") { NextStepCard(nextStep) { onNextStepUsed(nextStep); onNavigate(it) } }
                 item {
                     when {
                         weekError != null -> RumaError(weekError, onRetry)
-                        week == null -> RumaLoading("Cargando tu semana…")
+                        week == null -> RumaSkeleton(listOf(240.dp), label = "Cargando tu semana…")
                         else -> GoalRing(week)
                     }
                 }

@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
+import pe.ruma.app.ui.components.HeroRule
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import pe.ruma.app.navigation.GenRoutes
@@ -241,6 +242,15 @@ private fun Identidad(state: GeneratorUiState, address: String) {
                 tint = RumaColors.OnGenSoft, modifier = Modifier.size(14.dp),
             )
             Text(address, color = RumaColors.OnGenSoft, style = RumaType.bodySmall)
+        }
+        if (state.sackCode.isNotBlank()) {
+            HeroRule()
+            Text("TU CÓDIGO DE SACO", color = RumaColors.OnGenSoft, style = RumaType.overline)
+            Text(state.sackCode, color = RumaColors.OnDark, style = RumaType.metricLarge)
+            Text(
+                "Escríbelo en tu saco con plumón. El acopio pesa y verifica tu saco por este código.",
+                color = RumaColors.OnGenSoft, style = RumaType.bodySmall, textAlign = TextAlign.Center,
+            )
         }
     }
 }

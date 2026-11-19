@@ -1,5 +1,6 @@
 -- 2026-11-17 · Aviso de rider asignado sin minutos falsos
 -- APLICADO en STAGING (mbbdrmicjobydprvbpsj) el 2026-11-17. Falta repetirlo en producción (después de 2026-11-17_puntos_estado_pago_mixto.sql).
+-- Re-aplicado el 2026-11-18: el aviso "llegó" dice que el rider recoge el saco y el acopio lo pesa.
 -- Un recojo pedido para mañana decía "Llega en ~3 min" (los minutos son la distancia del rider ahora, no su visita).
 -- Si la fecha programada es posterior a hoy (hora de Lima), el aviso dice el día y la ventana.
 
@@ -57,7 +58,7 @@ begin
       when 'collecting' then
         insert into public.notifications (user_id, kind, title, body, reference_type, reference_id)
         values (new.generator_id, 'pickup_update', v_rider || ' llegó',
-                'Está recogiendo y contando tus residuos.', 'pickup', new.id);
+                'Está recogiendo tu saco. El acopio lo pesará y verificará, y ahí se acreditan tus puntos.', 'pickup', new.id);
       when 'completed' then
         insert into public.notifications (user_id, kind, title, body, reference_type, reference_id, push) values
           (new.generator_id, 'points_earned', 'Recojo completado',

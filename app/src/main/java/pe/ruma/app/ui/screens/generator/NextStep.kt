@@ -19,6 +19,9 @@ data class NextStep(
     val route: String,
 ) {
     enum class Kind { LIVE, PICKUP, CASH, START_WEEK, NEAR_GOAL, NEAR_CASH, REGISTER }
+
+    /** Same step = same kind and title ("Tienes 8 botellas…" and "Tienes 12 botellas…" are different steps). */
+    val key: String get() = "$kind|$title"
 }
 
 /** Points worth showing "ya casi cobras": from half of the minimum up. */

@@ -179,7 +179,8 @@ export function Bars({ data }: { data: { label: string; value: number; text?: st
 
 /* ---------- Map: Leaflet over OSM, no key ---------- */
 
-export type MapPin = { lat: number; lng: number; label?: string; color?: string; current?: boolean; selected?: boolean };
+/** image: a picture marker (one frame of the 3D Ruma pin), its tip at tipY (0..1) of its height. */
+export type MapPin = { lat: number; lng: number; label?: string; color?: string; current?: boolean; selected?: boolean; image?: string; tipY?: number };
 
 /** `focus` flies the map to a point (a tapped card); null leaves the framing alone. */
 export function RumaMap({ pins, path, full, followFirst, recenter = 0, focus = null }: { pins: MapPin[]; path?: [number, number][]; full?: boolean; followFirst?: boolean; recenter?: number; focus?: { lat: number; lng: number } | null }) {
@@ -218,7 +219,13 @@ export function RumaMap({ pins, path, full, followFirst, recenter = 0, focus = n
       node.className = p.current ? "pin pin-current" : p.selected ? "pin pin-selected" : "pin";
       node.style.background = p.color ?? accent;
       node.textContent = p.current ? "" : p.label && p.label.length <= 3 ? p.label : "•";
-      const icon = L.divIcon({ className: "map-marker", iconSize: [34, 34], iconAnchor: [17, 17], html: node });
+      let html: HTMLElement = node, size = 34, tip = 0.5;
+      if (p.image) {
+        const img = document.createElement("img");
+        img.src = p.image; img.alt = ""; img.className = "pin-picture";
+        html = img; size = 72; tip = p.tipY ?? 1;
+      }
+      const icon = L.divIcon({ className: "map-marker", iconSize: [size, size], iconAnchor: [size / 2, size * tip], html });
       const tooltip = document.createElement("span"); tooltip.textContent = p.label ?? "Destino";
       L.marker([p.lat, p.lng], { icon, title: p.label ?? "Destino", alt: p.label ?? "Destino", keyboard: true, zIndexOffset: p.selected ? 1000 : 0 }).bindTooltip(tooltip).addTo(g);
     }
@@ -248,4 +255,28 @@ export function RumaMap({ pins, path, full, followFirst, recenter = 0, focus = n
     el.current?.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "nearest" });
   }, [focus?.lat, focus?.lng]);
   return <div ref={el} className={`map ${full ? "map-full" : ""}`} />;
+}
+
+/**
+ * Where the phone points, degrees clockwise from north; null when the browser can't tell (no compass, or iOS
+ * before the motion permission, which must be asked from a tap — the camera asks it). Republished on 3° changes.
+ */
+export function useHeading(): number | null {
+  const [heading, setHeading] = useState<number | null>(null);
+  useEffect(() => {
+    let last: number | null = null;
+    const set = (deg: number) => {
+      const d = ((deg % 360) + 360) % 360;
+      if (last == null || Math.abs(((d - last + 540) % 360) - 180) >= 3) { last = d; setHeading(d); }
+    };
+    const onAbsolute = (e: DeviceOrientationEvent) => { if (e.absolute && e.alpha != null) set(360 - e.alpha); };
+    const onIos = (e: DeviceOrientationEvent) => {
+      const h = (e as DeviceOrientationEvent & { webkitCompassHeading?: number }).webkitCompassHeading;
+      if (h != null) set(h);
+    };
+    window.addEventListener("deviceorientationabsolute", onAbsolute as EventListener);
+    window.addEventListener("deviceorientation", onIos);
+    return () => { window.removeEventListener("deviceorientationabsolute", onAbsolute as EventListener); window.removeEventListener("deviceorientation", onIos); };
+  }, []);
+  return heading;
 }

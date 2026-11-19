@@ -1,5 +1,6 @@
 package pe.ruma.app.ui.screens.generator
 
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,7 +24,7 @@ import pe.ruma.app.ui.components.DetailHeader
 import pe.ruma.app.ui.components.GlassBadge
 import pe.ruma.app.ui.components.RumaEmpty
 import pe.ruma.app.ui.components.RumaList
-import pe.ruma.app.ui.components.RumaLoading
+import pe.ruma.app.ui.components.RumaSkeleton
 import pe.ruma.app.ui.components.RumaRow
 import pe.ruma.app.ui.components.TextAction
 import pe.ruma.app.ui.components.rumaScreen
@@ -63,7 +64,7 @@ fun GeneratorNotificationsScreen(
             verticalArrangement = Arrangement.spacedBy(RumaSpace.stack),
         ) {
             when {
-                list == null -> RumaLoading("Cargando notificaciones…")
+                list == null -> RumaSkeleton(listOf(72.dp, 72.dp, 72.dp, 72.dp), label = "Cargando notificaciones…")
                 list.isEmpty() -> RumaEmpty(Icons.Filled.Notifications, "Sin notificaciones", "Aquí te avisaremos de tus recojos, puntos y ganancias.", accent = RumaColors.Gen)
                 else -> RumaList(list) { n -> NotifRow(n) { onCardClick(n.id) } }
             }

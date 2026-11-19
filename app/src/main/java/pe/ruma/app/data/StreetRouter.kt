@@ -7,6 +7,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.Locale
@@ -68,6 +72,58 @@ object StreetRouter {
     suspend fun trip(start: RoutePlanner.LatLng, stops: List<RoutePlanner.LatLng>, vehicle: String?): Route? =
         if (stops.isEmpty()) null
         else fetch("trip", listOf(start) + stops, vehicle, "&source=first&roundtrip=false&destination=any")
+
+    /**
+     * Travel minutes between every pair of [points] by street (OSRM `table`), with the same traffic factor
+     * as a route. Row = from, column = to. Unreachable pairs come back as a long detour, not a hole.
+     */
+    suspend fun table(points: List<RoutePlanner.LatLng>, vehicle: String?): Array<DoubleArray>? =
+        if (points.size < 2) null else withContext(Dispatchers.IO) {
+            requestLock.withLock {
+                val waitMs = 1_000 - (System.nanoTime() - lastRequestNanos) / 1_000_000
+                if (waitMs > 0) delay(waitMs)
+                lastRequestNanos = System.nanoTime()
+                val coords = points.joinToString(";") { "%.6f,%.6f".format(Locale.US, it.lng, it.lat) }
+                val url = "$BASE/${profile(vehicle)}/table/v1/driving/$coords?annotations=duration"
+                try {
+                    val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).get().build()
+                    http.newCall(request).execute().use { resp ->
+                        if (!resp.isSuccessful) return@use null
+                        parseTable(resp.body?.string().orEmpty(), points.size)
+                    }
+                } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+            }
+        }
+
+    internal fun parseTable(body: String, n: Int): Array<DoubleArray>? {
+        val root = json.parseToJsonElement(body).jsonObject
+        if (root["code"]?.jsonPrimitive?.content != "Ok") return null
+        val rows = root["durations"]?.jsonArray ?: return null
+        if (rows.size != n) return null
+        return Array(n) { i ->
+            val row = rows[i].jsonArray
+            if (row.size != n) return null
+            DoubleArray(n) { j -> row[j].jsonPrimitive.doubleOrNull?.let { it * TRAFFIC_FACTOR / 60.0 } ?: UNREACHABLE_MIN }
+        }
+    }
+
+    /** A pair the router can't join: last resort, never a free ride. */
+    private const val UNREACHABLE_MIN = 600.0
+
+    /**
+     * Best order through [stops] from [start] by street time, weighing each family's window and Ruma Plus
+     * priority ([RouteOptimizer]). Returns indexes into [stops], or null when the router is unreachable.
+     */
+    suspend fun bestOrder(
+        start: RoutePlanner.LatLng,
+        stops: List<RoutePlanner.LatLng>,
+        constraints: List<RouteOptimizer.Stop>,
+        vehicle: String?,
+    ): List<Int>? {
+        if (stops.isEmpty()) return emptyList()
+        val minutes = table(listOf(start) + stops, vehicle) ?: return null
+        return RouteOptimizer.bestOrder(minutes, constraints)
+    }
 
     private suspend fun fetch(
         service: String,

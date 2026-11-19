@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalDrink
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
@@ -37,6 +38,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import pe.ruma.app.data.RoutePlanner
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.text.input.KeyboardType
+import pe.ruma.app.ui.components.RumaInputField
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -53,6 +59,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import pe.ruma.app.ui.components.rumaScreen
 import pe.ruma.app.ui.components.DetailHeader
 import pe.ruma.app.ui.components.HeroCard
+import pe.ruma.app.ui.components.SoftCard
 import pe.ruma.app.ui.components.IconBadge
 import pe.ruma.app.ui.components.RumaEmpty
 import pe.ruma.app.ui.components.RumaLoading
@@ -83,7 +90,10 @@ fun GeneratorPickupScreen(
     /** True while the phone is still getting a fix. */
     locating: Boolean = false,
     onBack: () -> Unit = {},
-    onConfirm: (List<Pair<String, Int>>, String) -> Unit = { _, _ -> },
+    /** The family's sack code, to write on the sack before the rider comes. */
+    sackCode: String = "",
+    /** Selections, time window, and the mobile number typed here (null when the account already has one). */
+    onConfirm: (List<Pair<String, Int>>, String, String?) -> Unit = { _, _, _ -> },
     onChangeAddress: () -> Unit = {},
     onUseMyLocation: () -> Unit = {},
     /** The device fix the rider will come to; null while locating or without GPS. */
@@ -112,7 +122,8 @@ fun GeneratorPickupScreen(
         ).filter { (day, _, ends) -> day != "Hoy" || hour < ends - 1 }
     }
 
-    Column(Modifier.fillMaxSize().rumaScreen().statusBarsPadding()) {
+    var phone by rememberSaveable { mutableStateOf("") }
+    Column(Modifier.fillMaxSize().rumaScreen().statusBarsPadding().imePadding()) {
         DetailHeader("Programar Recojo", onBack)
         LazyColumn(
             Modifier.weight(1f),
@@ -145,6 +156,17 @@ fun GeneratorPickupScreen(
                 )
             }
 
+            if (sackCode.isNotBlank()) {
+                item {
+                    SoftCard(Modifier.fillMaxWidth(), gap = RumaSpace.xs) {
+                        Text("Escribe $sackCode en tu saco", color = RumaColors.Text, style = RumaType.rowTitle)
+                        Text(
+                            "El Eco-Rider recoge tu saco y el acopio lo pesa y verifica por ese código. Ahí se acreditan tus puntos.",
+                            color = RumaColors.Text2, style = RumaType.bodySmall,
+                        )
+                    }
+                }
+            }
             item { SectionLabel("PUNTO DE RECOJO") }
             item {
                 PickupPlaceCard(
@@ -155,6 +177,16 @@ fun GeneratorPickupScreen(
                     onUseMyLocation = onUseMyLocation,
                     onChangeAddress = onChangeAddress,
                 )
+            }
+            if (f.phone.isNullOrBlank()) {
+                item { SectionLabel("TU CELULAR") }
+                item {
+                    RumaInputField(
+                        "CELULAR", Icons.Filled.Phone, phone, { phone = it.filter { c -> c.isDigit() || c in "+ -" }.take(16) },
+                        placeholder = "987 654 321", keyboardType = KeyboardType.Phone, enabled = !busy,
+                        helper = "El Eco-Rider te llamará si no encuentra tu casa. Lo guardamos en tu perfil.",
+                    )
+                }
             }
             item { SectionLabel("VENTANA HORARIA") }
             itemsIndexed(slots) { i, (day, time, _) ->
@@ -167,7 +199,7 @@ fun GeneratorPickupScreen(
                     horizontalArrangement = Arrangement.spacedBy(RumaSpace.sm), verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Icons.Outlined.Info, null, tint = RumaColors.Money, modifier = Modifier.size(RumaSpace.lg))
-                    Text("Tus puntos se acreditan cuando el acopio pese tu material, después del recojo.",
+                    Text("El acopio pesa y verifica tu saco: ahí se acreditan tus puntos y puedes cobrarlos.",
                         color = RumaColors.Money, style = RumaType.label)
                 }
             }
@@ -180,7 +212,7 @@ fun GeneratorPickupScreen(
                     onClick = {
                         val selections = f.items.mapIndexed { i, item -> item.materialId to quantities[i] }
                         val (day, time, _) = slots[slot]
-                        onConfirm(selections, "$day $time")
+                        onConfirm(selections, "$day $time", phone.takeIf { f.phone.isNullOrBlank() })
                     },
                 )
             }

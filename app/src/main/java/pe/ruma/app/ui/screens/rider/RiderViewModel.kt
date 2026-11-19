@@ -32,6 +32,7 @@ import pe.ruma.app.data.RiderShiftWorker
 import pe.ruma.app.data.RoutePlanner
 import pe.ruma.app.data.RouteDto
 import pe.ruma.app.data.StreetRouter
+import pe.ruma.app.data.RouteOptimizer
 import pe.ruma.app.data.NavigationRoutePolicy
 import pe.ruma.app.data.RouteProgress
 import android.os.SystemClock
@@ -115,8 +116,6 @@ class RiderViewModel : ViewModel() {
     /** The stop tapped on the route; null = simply the next one in order. */
     private var selectedId by mutableStateOf<String?>(null)
     /** Counts corrected at the door, per material id. */
-    private var confirmQty by mutableStateOf<Map<String, Int>>(emptyMap())
-    private var confirmCond by mutableStateOf<Map<String, String>>(emptyMap())
 
     /** Street path for the leg being navigated, and where/for which stop it was asked. */
     private var navRoad by mutableStateOf<StreetRouter.Route?>(null)
@@ -194,7 +193,7 @@ class RiderViewModel : ViewModel() {
         }
 
     val confirm: RiderConfirmUiState
-        get() = activePickup?.takeIf { it.rider_id != null }?.toConfirmUi(confirmQty, confirmCond) ?: RiderConfirmUiState()
+        get() = activePickup?.takeIf { it.rider_id != null }?.toConfirmUi() ?: RiderConfirmUiState()
 
     fun consumeMessage() { message = null }
     fun notify(text: String) { message = text }
@@ -437,8 +436,18 @@ class RiderViewModel : ViewModel() {
         // approximate order, which the screen labels as such, over a confident wrong one.
         val from = head?.latLng()?.toLL() ?: here ?: return
         val stops = assigned.mapNotNull { it.id }
-        val trip = StreetRouter.trip(from, located.map { it.latLng()!!.toLL() }, vehicle) ?: return
-        if (trip.visitOrder.sorted() != located.indices.toList()) return
+        // Today's stops by street time, each family's window and Ruma Plus first (RouteOptimizer); one booked
+        // for another day goes last, where it can't make a family of today wait.
+        val day = today()
+        val (later, now) = located.partition { (it.scheduled_date ?: day) > day }
+        val minute = Calendar.getInstance().let { it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE) }
+        val solved = StreetRouter.bestOrder(
+            from, now.map { it.latLng()!!.toLL() },
+            now.map { RouteOptimizer.Stop(RouteOptimizer.dueMinutes(it.window_label, it.scheduled_date, day, minute), it.priority) },
+            vehicle,
+        ) ?: StreetRouter.trip(from, now.map { it.latLng()!!.toLL() }, vehicle)?.visitOrder ?: return
+        if (solved.sorted() != now.indices.toList()) return
+        val visit = solved.map { now[it] } + later
         // Stops appeared or left while the router thought: its order and its drawn path
         // describe a route that no longer exists. Drop it — the next fix re-asks.
         if (generation != routeGeneration || assigned.mapNotNull { it.id } != stops || assigned.firstOrNull { it.underWay(here) }?.id != head?.id) return
@@ -446,10 +455,10 @@ class RiderViewModel : ViewModel() {
         // en_route). Apply only the order it computed to the rows we hold now; pasting
         // back the copies we captured would undo those fresher statuses.
         // ponytail: indexOf over a rider's handful of stops; a map if routes get long.
-        val order = (listOfNotNull(head) + trip.visitOrder.map { located[it] }).mapNotNull { it.id }
+        val order = (listOfNotNull(head) + visit).mapNotNull { it.id }
         val ordered = assigned.sortedBy { p -> order.indexOf(p.id).takeIf { it >= 0 } ?: Int.MAX_VALUE }
-        // Trip starts at the pinned stop; fetch the complete geometry from the rider.
-        val street = if (head != null) StreetRouter.route(listOfNotNull(here) + ordered.mapNotNull { it.latLng()?.toLL() }, vehicle) else trip
+        // The streets of that order, from the rider.
+        val street = StreetRouter.route(listOfNotNull(here) + ordered.mapNotNull { it.latLng()?.toLL() }, vehicle) ?: return
         if (generation != routeGeneration || assigned.mapNotNull { it.id } != stops) return
         assigned = assigned.sortedBy { p -> order.indexOf(p.id).takeIf { it >= 0 } ?: Int.MAX_VALUE }
         route = buildRoute(null, assigned, here, street)
@@ -575,22 +584,31 @@ class RiderViewModel : ViewModel() {
         }
     }
 
-    /** At the door: counting starts from what the family declared. */
-    fun arrive() {
+    /**
+     * "He llegado al punto": the database accepts it only with a fresh fix within arrival_radius_m of the house
+     * (check_rider_arrival), so the live position goes up first and a refusal stays on this screen with its reason
+     * ("Aún estás a 320 m de la casa") instead of opening the confirm screen.
+     */
+    fun arrive(onArrived: () -> Unit) {
         val p = activePickup?.takeIf { it.rider_id != null } ?: return
-        confirmQty = p.pickup_items.mapNotNull { item ->
-            item.materials?.id?.let { it to (item.confirmed_quantity ?: item.reported_quantity) }
-        }.toMap()
-        confirmCond = p.pickup_items.mapNotNull { item ->
-            item.materials?.id?.let { it to (item.condition ?: "limpia") }
-        }.toMap()
-        if (p.status != "collecting") advance(p, "collecting")
-    }
-
-    /** +/- on the confirm screen (never below zero). */
-    fun adjustConfirmed(materialId: String, delta: Int) {
-        val current = confirmQty[materialId] ?: return
-        confirmQty = confirmQty + (materialId to (current + delta).coerceIn(0, 999))
+        val id = p.id ?: return
+        if (p.status == "collecting") { onArrived(); return }
+        if (busy) return
+        busy = true
+        viewModelScope.launch {
+            try {
+                ensureSignedIn()
+                // Only the live navigation fix: re-sending an old one stamped "now" would fake the freshness check.
+                origin?.let { RumaRepository.publishRiderLocation(it.lat, it.lng) }
+                RumaRepository.setPickupStatus(id, "collecting")
+                assigned = assigned.map { if (it.id == id) it.copy(status = "collecting") else it }
+                onArrived()
+            } catch (e: Exception) {
+                message = e.message ?: "No se pudo marcar la llegada."
+            } finally {
+                busy = false
+            }
+        }
     }
 
     /** Status step (en_route/arriving/collecting): optimistic, trg_pickup_guard has the last word. */
@@ -640,12 +658,7 @@ class RiderViewModel : ViewModel() {
         }
     }
 
-    /** Writes the counts, completes the pickup → settle books points/earnings server-side. */
-    /** limpia | aplastada | sucia, per material; the database applies the factor. */
-    fun setCondition(materialId: String, condition: String) {
-        confirmCond = confirmCond + (materialId to condition)
-    }
-
+    /** "Recibí el saco": completes the pickup; the acopio weighs the sack, verifies it and settles. */
     fun confirmCollection(onDone: () -> Unit) {
         val p = activePickup?.takeIf { it.rider_id != null } ?: run { message = "Primero acepta el recojo desde el inicio."; return }
         val id = p.id ?: return
@@ -654,17 +667,12 @@ class RiderViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 ensureSignedIn()
-                val counts = p.pickup_items.mapNotNull { item ->
-                    item.materials?.id?.let { mid -> mid to (confirmQty[mid] ?: item.confirmed_quantity ?: item.reported_quantity) }
-                }
-                RumaRepository.confirmQuantities(id, counts, confirmCond)
                 RumaRepository.completePickup(id)
 
                 val remaining = assigned.count { it.id != id }
                 completed = RiderCompletedUiState(
                     stopName = p.generator?.display_name ?: "el vecino",
-                    materialsSummary = "${counts.sumOf { it.second }} unidades" +
-                        (p.total_weight_kg?.takeIf { it > 0 }?.let { " · %.1f kg".format(Locale.US, it) } ?: ""),
+                    materialsSummary = "${p.pickup_items.sumOf { it.reported_quantity }} declarados · el acopio pesará el saco",
                     // The settle prices them a moment later; don't show a zero as a result.
                     pointsAwarded = (p.generator_points_awarded?.takeIf { it > 0 }
                         ?: p.pickup_items.sumOf { it.points }.takeIf { it > 0 })
@@ -681,8 +689,6 @@ class RiderViewModel : ViewModel() {
                 assigned = assigned.filter { it.id != id }
                 knownStopIds = knownStopIds?.minus(id)
                 selectedId = null
-                confirmQty = emptyMap()
-                confirmCond = emptyMap()
                 navRoad = null
                 // Everything the settle touched is now stale.
                 route = null; history = null; earnings = null; stats = null
@@ -765,6 +771,24 @@ class RiderViewModel : ViewModel() {
      * stops locked, so one that slipped into another load is refused here instead of
      * riding along: the rider reads that message and the list comes back without it.
      */
+    /** "Llegué al acopio": the load is at the center; the acopio then counts it. */
+    fun markDeliveryArrived(deliveryId: String) {
+        if (busy) return
+        busy = true
+        viewModelScope.launch {
+            try {
+                ensureSignedIn()
+                RumaRepository.markDeliveryArrived(deliveryId)
+                message = "Listo: el acopio sabe que tu carga llegó. Te avisaremos cuando la cuenten."
+            } catch (e: Exception) {
+                message = e.message ?: "No se pudo marcar la llegada."
+            } finally {
+                busy = false
+                loadDelivery(force = true)
+            }
+        }
+    }
+
     fun sendDelivery(onSent: () -> Unit) {
         val center = pickedCenter ?: return
         val stops = pickedStops.toList()
@@ -866,7 +890,8 @@ private fun buildDelivery(
                 id = d.id,
                 status = d.status,
                 code = d.code ?: "-",
-                statusLabel = deliveryStatusLabel(d.status),
+                statusLabel = deliveryStatusLabel(d.status, d.arrived_at != null),
+                canMarkArrived = d.status == "en_camino" && d.arrived_at == null,
                 centerName = d.center?.name ?: "Acopio",
                 detail = deliveryDetail(d),
                 // Nada esta cobrado hasta la liquidacion; un cero antes de eso engana.
@@ -889,18 +914,18 @@ private fun buildDelivery(
     )
 }
 
-private fun deliveryStatusLabel(status: String): String = when (status) {
-    "en_camino" -> "En camino al acopio"
-    "recibida" -> "Recibida · esperando pesaje"
-    "pesada" -> "Pesada · esperando liquidacion"
-    "liquidada" -> "Liquidada · te pagaron"
+/** What the rider reads (2026-11-19): four steps, the same words the notifications use. */
+private fun deliveryStatusLabel(status: String, arrived: Boolean): String = when (status) {
+    "en_camino" -> if (arrived) "En el centro de acopio" else "En camino al acopio"
+    "recibida", "pesada" -> "Contando"
+    "liquidada" -> "Terminado · pago en proceso"
     "rechazada" -> "Rechazada por el acopio"
     else -> status
 }
 
 private fun deliveryDetail(d: DeliveryDto): String = listOfNotNull(
     d.delivery_pickups.size.takeIf { it > 0 }?.let { if (it == 1) "1 recojo" else "$it recojos" },
-    d.total_kg?.takeIf { it > 0 }?.let { "%.1f kg".format(Locale.US, it) },
+    d.total_kg?.takeIf { it > 0 }?.let { "%.2f kg".format(Locale.US, it) },
     (d.settled_at ?: d.departed_at)?.let { RumaTime.dayMonth(it) },
 ).joinToString(" · ").ifBlank { "Sin detalle" }
 
@@ -1011,7 +1036,7 @@ private fun buildDashboard(
     )
 }
 
-private fun PickupDto.toConfirmUi(qty: Map<String, Int>, cond: Map<String, String>): RiderConfirmUiState {
+private fun PickupDto.toConfirmUi(): RiderConfirmUiState {
     val mats = pickup_items.map {
         val mid = it.materials?.id.orEmpty()
         ConfirmMaterialUi(
@@ -1021,12 +1046,11 @@ private fun PickupDto.toConfirmUi(qty: Map<String, Int>, cond: Map<String, Strin
             points = "+${it.points} pts",
             materialId = mid,
             declared = it.reported_quantity,
-            confirmed = qty[mid] ?: it.confirmed_quantity ?: it.reported_quantity,
-            condition = cond[mid] ?: it.condition ?: "limpia",
         )
     }
     val totalPts = (generator_points_awarded ?: 0).takeIf { it > 0 } ?: pickup_items.sumOf { it.points }
     return RiderConfirmUiState(
+        sackCode = generator?.ruma_code.orEmpty(),
         stopName = generator?.display_name ?: "Recolector",
         address = stopAddress(),
         streak = windowText(window_label, scheduled_date).ifBlank { "Recojo programado" },
@@ -1435,3 +1459,4 @@ private fun NotificationDto.toRiderUi(): RiderNotifUi {
         aboutPickup = reference_type == "pickup",
     )
 }
+

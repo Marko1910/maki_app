@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import pe.ruma.app.data.CollectionCenterDto
 import pe.ruma.app.data.SavedPileRowDto
+import pe.ruma.app.data.PeruPhone
 import pe.ruma.app.data.DetectResultDto
 import pe.ruma.app.data.DetectedItemDto
 import pe.ruma.app.data.DetectionDto
@@ -51,6 +52,8 @@ data class GeneratorUiState(
     val moneyValue: String = "S/0.00",
     /** Booked on pickup, spendable once the acopio weighs it (settle_delivery). */
     val pendingPoints: Int = 0,
+    /** Sack code ("RU-7K3Q9A"): the family writes it on the sack and the acopio counts by it. */
+    val sackCode: String = "",
 )
 
 // ---- Per-screen UI models ----
@@ -110,6 +113,8 @@ data class PickupFormUi(
     val items: List<PickupFormItemUi>,
     val addressLine: String,
     val addressId: String? = null,
+    /** The account's mobile number; null asks for it on the form (the rider must be able to call). */
+    val phone: String? = null,
 )
 data class PickupFormItemUi(val code: String, val label: String, val initialQty: Int, val materialId: String = "")
 
@@ -545,6 +550,7 @@ class GeneratorViewModel : ViewModel() {
             items = items,
             addressLine = address?.address_line ?: "Sin dirección registrada",
             addressId = address?.id?.takeIf { it.isNotBlank() },
+            phone = runCatching { RumaRepository.loadMyPhone() }.getOrNull(),
         )
     }
 
@@ -833,12 +839,22 @@ class GeneratorViewModel : ViewModel() {
         pickupHereLabel = label
     }
 
-    fun createPickup(selections: List<Pair<String, Int>>, windowLabel: String, onDone: () -> Unit) {
+    fun createPickup(selections: List<Pair<String, Int>>, windowLabel: String, phone: String?, onDone: () -> Unit) {
         if (selections.none { it.second > 0 }) { message = "Agrega al menos un material al recojo."; return }
         val form = pickupForm
+        // The database refuses both too (require_pickup_contact); asking here keeps the family on the form.
+        val newPhone = if (form?.phone.isNullOrBlank()) PeruPhone.normalize(phone) ?: run { message = PeruPhone.HINT; return } else null
+        if (pickupHere == null && form?.addressId == null) {
+            message = "Activa tu ubicación o escribe tu dirección para que el Eco-Rider te encuentre."
+            return
+        }
         val fromScans = lastDetectionId != null || savedPile.isNotEmpty()
         val here = pickupHere
         runAction(success = "¡Recojo solicitado!", onSuccess = onDone) {
+            if (newPhone != null) {
+                RumaRepository.updateMyPhone(newPhone)
+                pickupForm = pickupForm?.copy(phone = newPhone)
+            }
             val pickupId = if (fromScans) {
                 // Link every saved scan (the whole pile) so the rider's count is compared with all of them.
                 val id = RumaRepository.createPickupFromDetection(form?.addressId, scheduledDateFor(windowLabel), windowLabel, here)
@@ -973,6 +989,7 @@ private fun GeneratorProfileDto.toUiState(): GeneratorUiState {
         water = "%.1f m³".format(Locale.US, water_saved_l / 1000.0),
         moneyValue = "S/%.2f".format(Locale.US, points_balance / 1000.0),
         pendingPoints = points_pending,
+        sackCode = profiles?.ruma_code.orEmpty(),
     )
 }
 

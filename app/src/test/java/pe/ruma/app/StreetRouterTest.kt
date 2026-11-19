@@ -81,4 +81,13 @@ class StreetRouterTest {
         // Each hop rounds up on its own, so the parts are never short of the whole.
         assertTrue(r.hopMinutes.sum() >= r.minutes)
     }
+
+    @Test fun readsTheTravelTimeTable() {
+        val m = StreetRouter.parseTable("""{"code":"Ok","durations":[[0,600],[null,0]]}""", 2)!!
+        // 600 s × 1.3 traffic = 13 min; an unreachable pair is a long detour, not free.
+        org.junit.Assert.assertEquals(13.0, m[0][1], 1e-9)
+        org.junit.Assert.assertEquals(600.0, m[1][0], 1e-9)
+        org.junit.Assert.assertNull(StreetRouter.parseTable("""{"code":"NoRoute"}""", 2))
+        org.junit.Assert.assertNull(StreetRouter.parseTable("""{"code":"Ok","durations":[[0]]}""", 2))
+    }
 }

@@ -51,6 +51,8 @@ data class UserDto(val id: String, val email: String? = null)
 data class ProfileDto(
     val display_name: String? = null,
     val full_name: String? = null,
+    /** The person's sack code ("RU-7K3Q9A"): written on their sack, the acopio counts by it. */
+    val ruma_code: String? = null,
 )
 
 /** The account's role (generador | eco_rider | operador): decides which app opens. */
@@ -201,21 +203,28 @@ data class NotificationDto(
 
 // ---- Pickups (tracking + history) ----
 @Serializable
-data class MaterialNameDto(val id: String? = null, val name: String? = null, val code: String? = null, val icon: String? = null)
+data class MaterialNameDto(val id: String? = null, val name: String? = null, val code: String? = null, val icon: String? = null, val avg_weight_kg: Double? = null)
 
 @Serializable
 data class PickupItemDto(
     val reported_quantity: Int = 0,
     val confirmed_quantity: Int? = null,
-    /** limpia | aplastada | sucia: set by the rider at the door; the database prices it. */
+    /** limpia | aplastada | sucia: graded by the acopio now (center_condition); old APKs still set it at the door. */
     val condition: String? = null,
+    /** Kilos the rider weighed at the door (the acopio counts the units in the labelled sack). */
+    val weight_kg: Double? = null,
     val points: Int = 0,
     val materials: MaterialNameDto? = null,
 )
 
 /** A profile embedded in a pickup (the rider for the family, the family for the rider). */
 @Serializable
-data class RiderNameDto(val display_name: String? = null, val phone: String? = null)
+data class RiderNameDto(
+    val display_name: String? = null,
+    val phone: String? = null,
+    /** The person's sack code ("RU-7K3Q9A"), printed on their sack: the acopio counts by it. */
+    val ruma_code: String? = null,
+)
 
 /** Body of every RPC that takes just a pickup (complete_pickup, release_pickup). */
 @Serializable
@@ -231,6 +240,8 @@ data class PickupDto(
     val status: String = "",
     val scheduled_date: String? = null,
     val window_label: String? = null,
+    /** Above 0 for a Ruma Plus family ("tu recojo primero"): the rider's route weighs it. */
+    val priority: Int = 0,
     val eta_minutes: Int? = null,
     val generator_points_awarded: Int? = null,
     /** Set when the acopio weighed the batch: the points actually credited. */
@@ -577,6 +588,8 @@ data class DeliveryDto(
     val total_kg: Double? = null,
     val rider_amount: Double? = null,
     val departed_at: String? = null,
+    /** The rider (or the acopio) marked that the load reached the center. */
+    val arrived_at: String? = null,
     val settled_at: String? = null,
     val center: CenterNameDto? = null,
     /** Only the ids: the screen counts the stops, it never lists them again. */

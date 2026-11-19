@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { RumaMap } from "./ui";
+import { RumaMap, useHeading } from "./ui";
 import type { LatLng } from "../lib/util";
 import "./dispatch.css";
 
 // Pre-rendered 3D frames in public/anim (Blender: landing/3d/ruma-fardo-v2.blend, the Eco-Rider tricycle, the Ruma pin).
 const RIDER = { name: "rider", count: 12, fps: 14 };
-const PIN = { name: "pin", count: 24, fps: 16 };
 const CITY = { name: "city", count: 24, fps: 12 };
 const src = (name: string, i: number) => `/anim/${name}-${String(i).padStart(2, "0")}.webp`;
 const reducedMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -26,14 +25,17 @@ function Sprite({ name, count, fps, playing = true, className }: { name: string;
 }
 
 /** A map centred on [at] with the spinning 3D Ruma pin standing on that point; [radar] adds the searching pulse. */
-export function PinMap({ at, radar = false }: { at: LatLng; radar?: boolean }) {
-  return (
-    <div className={`pin-map${radar ? " radar" : ""}`}>
-      <RumaMap pins={[{ ...at, color: "transparent" }]} />
-      {radar && <div className="pin-radar" aria-hidden="true"><i /><i /><i /></div>}
-      <Sprite {...PIN} className="pin-3d" />
-    </div>
-  );
+/**
+ * A map centred on [at] with the 3D Ruma pin standing on that point, as a real map marker: it moves with the map
+ * when the family drags it (it used to be a sprite over the map's centre, left on the wrong street after a drag).
+ * It turns with the phone's compass instead of spinning: its 24 frames are a full turn, 15° apart, so the frame
+ * shown is the heading. Without a compass it stands still. Twin of PinMap in DispatchScene.kt.
+ */
+export function PinMap({ at }: { at: LatLng }) {
+  const heading = useHeading();
+  const frame = heading == null ? 0 : Math.round(heading / 15) % 24;
+  const image = `/anim/pin-${String(frame).padStart(2, "0")}.webp`;
+  return <div className="pin-map"><RumaMap pins={[{ ...at, image, tipY: 0.78 }]} /></div>;
 }
 
 /**

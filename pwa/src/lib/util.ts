@@ -1,19 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { humanize, type Row } from "./api";
+import { cacheGet, cacheHas, cacheSet } from "./cache";
 
 /* ---------- Data loading: every list resolves to loading, empty or error ---------- */
 
+/**
+ * Loads a screen's data. Stale-while-revalidate (lib/cache.ts): a screen visited before this session shows its
+ * last data at once and refreshes it quietly, instead of a skeleton on every visit. The key is the loader's source
+ * plus its deps, so the same loader with the same arguments shares one entry.
+ */
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = []) {
-  const [data, setData] = useState<T | undefined>();
+  const key = `${fn.toString()}|${JSON.stringify(deps)}`;
+  const [data, setData] = useState<T | undefined>(() => cacheGet<T>(key));
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !cacheHas(key));
   const live = useRef(0);
   const reload = useCallback(async (quiet = false) => {
     const run = ++live.current;
     if (!quiet) setLoading(true);
     try {
       const d = await fn();
-      if (run === live.current) { setData(d); setError(null); }
+      if (run === live.current) { setData(d); setError(null); cacheSet(key, d); }
     } catch (e) {
       if (run === live.current && !quiet) setError(humanize(e));
     } finally {
@@ -21,7 +28,8 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = []) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
-  useEffect(() => { void reload(); }, [reload]);
+  // With cached data the first load is quiet: the screen stays as it was while it refreshes.
+  useEffect(() => { void reload(cacheHas(key)); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [reload]);
   return { data, error, loading, reload };
 }
 

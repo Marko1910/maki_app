@@ -2,11 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation, useNavigate } from "react-router-dom";
 import { useRoadNavigation } from "../../lib/useRoadNavigation";
 import { PushCard } from "../../components/Push";
-import { streetRoute } from "../../lib/navigation";
-import { Empty, Failure, Icon, NavRow, RumaMap, Skeleton, Stepper, TopBar, useToast, type MapPin } from "../../components/ui";
+import { bestStreetOrder, streetRoute } from "../../lib/navigation";
+import { dueMinutes } from "../../lib/routeOptimizer";
+import { Empty, Failure, Icon, NavRow, RumaMap, Skeleton, TopBar, useToast, type MapPin } from "../../components/ui";
 import { tick } from "../../lib/flow";
-import { acceptPickup, completePickup, confirmQuantities, humanize, loadAvailablePickups, loadMyAssignedPickups, loadMyName, loadMyRiderProfile, loadNotifications, loadRiderEarnings, loadRiderPosition, myId, releasePickup, setPickupStatus, setRiderAvailability, setRiderShiftStart, type Row } from "../../lib/api";
-import { ago, clock, distanceKm, here, itemsLine, meters, pickupLatLng, sameDay, soles, stopAddress, streetTrip, useAsync, useInterval, useWakeLock, VEHICLE, windowText, type LatLng, type RoadRoute } from "../../lib/util";
+import { acceptPickup, completePickup, humanize, publishRiderLocation, loadAvailablePickups, loadMyAssignedPickups, loadMyName, loadMyRiderProfile, loadNotifications, loadRiderEarnings, loadRiderPosition, myId, releasePickup, setPickupStatus, setRiderAvailability, setRiderShiftStart, type Row } from "../../lib/api";
+import { ago, clock, distanceKm, here, isoDate, itemsLine, meters, pickupLatLng, sameDay, soles, stopAddress, useAsync, useInterval, useWakeLock, VEHICLE, windowText, type LatLng, type RoadRoute } from "../../lib/util";
 
 /* ---------- Rider state shared by the whole graph ---------- */
 
@@ -248,11 +249,17 @@ export function RouteScreen() {
       // stops left "en_route" by old tests started a Cartavio rider's trip in Trujillo.
       const head = points.find((x) => ["arriving", "collecting"].includes(x.p.status) && distanceKm(origin, x.l) <= 1);
       const rest = points.filter((x) => x !== head);
-      const trip = rest.length ? await streetTrip(head?.l ?? origin, rest.map((x) => x.l), r.profile?.vehicle_type, controller.signal) : null;
+      // Today's stops by street time, each family's window and Ruma Plus first (routeOptimizer.ts);
+      // one booked for another day goes last, where it can't make a family of today wait.
+      const now = new Date(), day = isoDate(now), minute = now.getHours() * 60 + now.getMinutes();
+      const later = rest.filter((x) => (x.p.scheduled_date ?? day) > day), today = rest.filter((x) => !later.includes(x));
+      const solved = today.length ? await bestStreetOrder(head?.l ?? origin, today.map((x) => x.l),
+        today.map((x) => ({ dueMin: dueMinutes(x.p.window_label, x.p.scheduled_date, day, minute), priority: x.p.priority ?? 0 })),
+        r.profile?.vehicle_type, controller.signal) : [];
       if (controller.signal.aborted) return;
-      const order = trip ? trip.order.map((i) => rest[i]) : rest;
+      const order = [...(solved ? solved.map((i) => today[i]) : today), ...later];
       const ordered = [...(head ? [head] : []), ...order];
-      const full = head ? await streetRoute([origin, ...ordered.map((x) => x.l)], r.profile?.vehicle_type, controller.signal) : trip;
+      const full = await streetRoute([origin, ...ordered.map((x) => x.l)], r.profile?.vehicle_type, controller.signal);
       if (controller.signal.aborted) return;
       if (full) setPlan({ key, road: full, ids: ordered.map((x) => x.p.id) });
       else { setPlan(null); setRouteError(true); }
@@ -360,10 +367,19 @@ export function Navigation() {
     document.addEventListener("visibilitychange", stop);
     return () => { document.removeEventListener("visibilitychange", stop); if ("speechSynthesis" in window) speechSynthesis.cancel(); };
   }, []);
+  // The database accepts "He llegado" only with a fresh fix near the house (check_rider_arrival): send the live
+  // position first; a refusal ("Aún estás a 320 m de la casa") stays here as a toast.
   const arrive = async () => {
     if (!p) return;
     setBusy(true);
-    try { if (p.status !== "collecting") await setPickupStatus(p.id, "collecting"); await r.refresh(); nav("/r/confirmar"); }
+    try {
+      if (p.status !== "collecting") {
+        const fix = await here(0);
+        if (fix) await publishRiderLocation(fix.lat, fix.lng);
+        await setPickupStatus(p.id, "collecting");
+      }
+      await r.refresh(); nav("/r/confirmar");
+    }
     catch (e) { toast(humanize(e)); setBusy(false); }
   };
   const release = async () => {
@@ -421,28 +437,17 @@ export function Confirm() {
   const toast = useToast();
   const r = useRider();
   const p = r.active;
-  const [counts, setCounts] = useState<Record<string, number>>({});
-  const [conds, setConds] = useState<Record<string, string>>({});
+  // The rider only receives the labelled sack (2026-11-18, docs/debate-quien-mide.md): the acopio weighs and verifies it.
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (!p) return;
-    const seed: Record<string, number> = {};
-    const cs: Record<string, string> = {};
-    for (const i of p.pickup_items ?? []) if (i.materials?.id) { seed[i.materials.id] = i.confirmed_quantity ?? i.reported_quantity; cs[i.materials.id] = i.condition ?? "limpia"; }
-    setCounts(seed);
-    setConds(cs);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p?.id]);
   if (r.loading) return <main className="screen"><Skeleton label="Cargando el recojo…" blocks={[96, 72, 72, 72, 56]} /></main>;
   if (!p) return <main className="screen"><TopBar title="Confirmar Recolección" /><Empty title="No hay un recojo en curso" icon="box" /></main>;
   const items: Row[] = p.pickup_items ?? [];
   const confirm = async () => {
     setBusy(true);
     try {
-      await confirmQuantities(p.id, Object.entries(counts), conds);
       await completePickup(p.id);
       const remaining = r.assigned.filter((x) => x.id !== p.id).length;
-      r.setCompleted({ name: familyOf(p), units: Object.values(counts).reduce((s, n) => s + n, 0), earnings: p.rider_earnings ?? 0, remaining });
+      r.setCompleted({ name: familyOf(p), declared: items.reduce((s, i) => s + (i.reported_quantity ?? 0), 0), earnings: p.rider_earnings ?? 0, remaining });
       r.select(null);
       tick();
       toast("¡Recolección confirmada!");
@@ -453,27 +458,27 @@ export function Confirm() {
   return (
     <main className="screen with-bar">
       <TopBar title="Confirmar Recolección" />
-      <section className="glass pad"><p className="t-row">{familyOf(p)}</p><p className="muted t-small">{addressOf(p)}</p><p className="muted t-small">{windowText(p)}</p></section>
-      <p className="t-over">Cuenta lo que recibes</p>
+      <section className="glass pad">
+        {p.generator?.ruma_code && <><p className="t-card accent">SACO {p.generator.ruma_code}</p><p className="muted t-small">Revisa que el saco tenga este código antes de llevarlo.</p></>}
+        <p className="t-row">{familyOf(p)}</p><p className="muted t-small">{addressOf(p)}</p><p className="muted t-small">{windowText(p)}</p>
+      </section>
+      <p className="t-over">Lo que declaró la familia</p>
       {items.length ? <div className="glass list">
         {items.map((i) => <div key={i.materials?.id} style={{ flexWrap: "wrap" }}>
           <span className="badge">{(i.materials?.code ?? "").slice(0, 3)}</span>
           <span className="min0"><span className="t-row" style={{ display: "block" }}>{i.materials?.name}</span><span className="muted t-small">La familia declaró {i.reported_quantity}</span></span>
-          <Stepper value={counts[i.materials?.id] ?? 0} label={i.materials?.name ?? "material"} onChange={(n) => setCounts({ ...counts, [i.materials.id]: n })} />
-          <div className="chips" role="radiogroup" aria-label={`Estado de ${i.materials?.name ?? "material"}`} style={{ flexBasis: "100%" }}>
-            {([["limpia", "Limpia"], ["aplastada", "Aplastada"], ["sucia", "Con líquido o sucia"]] as const).map(([k, label]) => <button key={k} role="radio" aria-checked={(conds[i.materials?.id] ?? "limpia") === k} aria-pressed={(conds[i.materials?.id] ?? "limpia") === k} className="glass filter" onClick={() => setConds({ ...conds, [i.materials.id]: k })}>{label}</button>)}
-          </div>
+
         </div>)}
       </div> : <p className="muted">No hay materiales declarados</p>}
-      <p className="muted t-small">Lo que cuentes aquí es lo que se registra: los puntos del vecino y tu pago salen de este número.</p>
+      <p className="muted t-small">No necesitas pesar ni contar: lleva el saco al acopio. Allí lo pesan y verifican, y de ahí salen los puntos del vecino.</p>
       <section className="hero">
         <p className="t-over">Ganancia estimada</p>
         <p className="t-hero">≈ {soles(p.rider_earnings)}</p>
         <p className="soft t-small">Se paga al pesar · S/ 0,35 por kg pesado + S/ 6 por ruta de 12 recojos</p>
         {(p.total_weight_kg ?? 0) > 0 && <div className="between hero-rule"><span className="soft">Peso total</span><span style={{ fontWeight: 800 }}>{Number(p.total_weight_kg).toFixed(2)} kg</span></div>}
-        <p className="soft t-small">Los puntos del recolector se confirman en el acopio.</p>
+        <p className="soft t-small">Los puntos del vecino los verifica el acopio.</p>
       </section>
-      <div className="bottombar"><div><button className="btn btn-primary" disabled={busy} onClick={() => void confirm()}>{busy ? "Confirmando…" : "Confirmar recolección"} <Icon name="check" /></button></div></div>
+      <div className="bottombar"><div><button className="btn btn-primary" disabled={busy} onClick={() => void confirm()}>{busy ? "Confirmando…" : `Recibí el saco${p.generator?.ruma_code ? ` ${p.generator.ruma_code}` : ""}`} <Icon name="check" /></button></div></div>
     </main>
   );
 }
@@ -493,7 +498,7 @@ export function Completed() {
       <div className="center"><h1 className="t-title">¡Recojo Completado!</h1><p className="muted">{c.name}</p></div>
       <section className="hero"><p className="t-over">Ganancia estimada</p><p className="t-hero">≈ {soles(c.earnings)}</p><p className="soft t-small">Se paga al pesar</p></section>
       <section className="glass pad stack"><h2 className="t-row">Resumen del recojo</h2>
-        <div className="between"><span className="muted">Materiales</span><span className="t-row">{c.units} unidades</span></div>
+        <div className="between"><span className="muted">Materiales</span><span className="t-row">{c.declared} declarados · el acopio pesará el saco</span></div>
         <div className="between"><span className="muted">Puntos para la familia</span><span className="t-row">Se acreditan en el acopio</span></div>
       </section>
       <p className="glass pad row"><Icon name="route" /> {left === 0 ? "No te quedan paradas por ahora" : left === 1 ? "Te queda 1 parada en tu ruta" : `Te quedan ${left} paradas en tu ruta`}</p>

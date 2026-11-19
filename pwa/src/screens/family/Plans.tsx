@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Empty, Failure, Icon, Loading, TopBar, useToast } from "../../components/ui";
+import { Empty, Failure, Icon, Skeleton, TopBar, useToast } from "../../components/ui";
 import { cancelMyPlan, humanize, loadMyPlan, loadPlans, requestPlan, startPlanTrial, type PlanRow } from "../../lib/api";
 import { useAsync } from "../../lib/util";
 
@@ -25,7 +25,7 @@ export function Plans() {
     setBusy(false);
   };
 
-  if (loading && !data) return <main className="screen"><TopBar title="Planes" /><Loading text="Cargando planes…" /></main>;
+  if (loading && !data) return <main className="screen"><TopBar title="Planes" /><Skeleton label="Cargando planes…" blocks={[120, 180, 180]} /></main>;
   if (!data) return <main className="screen"><TopBar title="Planes" /><Failure text={error ?? "No pudimos cargar los planes."} retry={() => void reload()} /></main>;
 
   const { plans, mine } = data;

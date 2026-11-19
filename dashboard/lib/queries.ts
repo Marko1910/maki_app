@@ -56,16 +56,20 @@ export type Entrega = {
   platform_fee: number;
   rider_amount: number;
   departed_at: string | null;
+  /** The rider (or this panel) marked the load as delivered to the center. */
+  arrived_at: string | null;
   received_at: string | null;
   weighed_at: string | null;
   settled_at: string | null;
   rider: { display_name: string | null } | null;
+  /** Kilos already weighed: total_kg is only written when settling, so the queue read "sin pesar" after weighing. */
+  delivery_items?: { weight_kg: number }[];
 };
 
 const ENTREGA_SELECT =
   "id,code,status,rider_id,total_kg,gross_amount,platform_fee,rider_amount," +
-  "departed_at,received_at,weighed_at,settled_at," +
-  "rider:profiles!deliveries_rider_id_fkey(display_name)";
+  "departed_at,arrived_at,received_at,weighed_at,settled_at," +
+  "rider:profiles!deliveries_rider_id_fkey(display_name),delivery_items(weight_kg)";
 
 /** La cola de trabajo: lo que viene, lo que llegó y lo pesado sin liquidar. */
 export async function colaPendiente(centerId: string): Promise<Entrega[]> {
@@ -244,7 +248,12 @@ export async function kilosPorMaterial(centerId: string, desde: Date) {
 // Acciones. El cliente pide; la base decide.
 // ---------------------------------------------------------------------------
 
-/** El lote llegó al mostrador. */
+/** El rider dejó la carga en el centro (si él no lo marcó en la app). */
+export async function marcarLlegada(id: string) {
+  return supabase.rpc("mark_delivery_arrived", { p_delivery_id: id });
+}
+
+/** "Empezar conteo": el lote está en el mostrador y el acopio empieza a pesar y verificar sus sacos. */
 export async function recibirEntrega(id: string, operadorId: string) {
   return supabase
     .from("deliveries")
@@ -252,6 +261,75 @@ export async function recibirEntrega(id: string, operadorId: string) {
     .eq("id", id)
     .select("id")
     .maybeSingle();
+}
+
+/**
+ * Cada saco del lote (un recojo, marcado con el código de la familia). El acopio lo pesa; solo se cuenta a mano si
+ * el peso no respalda lo declarado o si salió en la muestra al azar (pickups.sack_audit). Misma regla que
+ * public.sack_weight_ok en la base, que es la que decide al liquidar.
+ */
+export type Saco = {
+  pickup_id: string;
+  code: string | null;
+  familia: string;
+  ruma_code: string | null;
+  muestra: boolean;
+  items: { material_id: string; material: string; declarado: number; peso_unidad: number; kg: number | null; contado: number | null; estado: string | null }[];
+};
+
+/** ±tolerancia del peso frente a lo declarado (platform_settings.sack_weight_tolerance). */
+export async function toleranciaSaco(): Promise<number> {
+  const r = (await q(supabase.from("platform_settings").select("sack_weight_tolerance").limit(1))) as any[] | null;
+  return Number(r?.[0]?.sack_weight_tolerance ?? 0.35);
+}
+
+/** ¿El peso del saco respalda lo declarado? Espejo de public.sack_weight_ok. */
+export function pesoCuadra(kg: number | null, declarado: number, pesoUnidad: number, tolerancia: number) {
+  return kg != null && declarado > 0 && pesoUnidad > 0 && Math.abs(kg / (declarado * pesoUnidad) - 1) <= tolerancia;
+}
+
+export async function sacosDeEntrega(deliveryId: string): Promise<Saco[]> {
+  const rows = (await q(
+    supabase
+      .from("delivery_pickups")
+      .select(
+        "pickup_id,pickups(code,sack_audit,generator:profiles!pickups_generator_id_fkey(display_name,ruma_code)," +
+          "pickup_items(material_id,reported_quantity,center_weight_kg,center_quantity,center_condition,materials(code,name,avg_weight_kg)))",
+      )
+      .eq("delivery_id", deliveryId),
+  )) as any[] | null;
+  return (rows ?? []).map((r) => ({
+    pickup_id: r.pickup_id,
+    code: r.pickups?.code ?? null,
+    familia: r.pickups?.generator?.display_name ?? "Familia",
+    ruma_code: r.pickups?.generator?.ruma_code ?? null,
+    muestra: !!r.pickups?.sack_audit,
+    items: (r.pickups?.pickup_items ?? []).map((i: any) => ({
+      material_id: i.material_id,
+      material: i.materials?.name ?? i.materials?.code ?? "Material",
+      declarado: i.reported_quantity ?? 0,
+      peso_unidad: Number(i.materials?.avg_weight_kg ?? 0),
+      kg: i.center_weight_kg == null ? null : Number(i.center_weight_kg),
+      contado: i.center_quantity,
+      estado: i.center_condition,
+    })),
+  }));
+}
+
+/**
+ * El acopio pesa cada saco, lo califica y, si hace falta, lo cuenta: de aquí salen los puntos de cada familia.
+ * La base solo lo acepta del operador del centro que recibió el lote, antes de liquidar.
+ */
+export async function registrarConteo(filas: { pickup_id: string; material_id: string; kg: number; unidades: number | null; estado: string }[]) {
+  for (const f of filas) {
+    const r = await supabase
+      .from("pickup_items")
+      .update({ center_weight_kg: f.kg, center_quantity: f.unidades, center_condition: f.estado })
+      .eq("pickup_id", f.pickup_id)
+      .eq("material_id", f.material_id);
+    if (r.error) return r;
+  }
+  return { error: null };
 }
 
 export type PesoItem = { material_id: string; weight_kg: number; quality_grade: "A" | "B" | "C"; price_per_kg: number };

@@ -27,20 +27,11 @@
   .dispatch-drive, .dispatch-ok { animation: none; }
 }
 
-/* Pin map (pickup point and the ride-app style search): the 3D pin stands on the map's centre, where the point is. */
+/* Pin map (pickup point): "you are here" is a real map marker, so it stays on its street when the map is dragged. */
 .pin-map { position: relative; width: 100%; }
 .pin-map .map { height: 190px; }
-.pin-map .map-marker { opacity: 0; }   /* the 3D pin replaces Leaflet's dot at the same spot */
-.pin-3d { position: absolute; left: 50%; top: 50%; width: 76px; height: auto; margin-left: -38px; margin-top: -70px; pointer-events: none; z-index: 2;
-  filter: drop-shadow(0 4px 6px rgba(22, 33, 28, .18)); }
-.pin-radar { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; z-index: 1; }
-.pin-radar i { position: absolute; left: -90px; top: -90px; width: 180px; height: 180px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(15, 110, 86, .28) 0%, rgba(15, 110, 86, .12) 45%, transparent 70%);
-  border: 2px solid rgba(15, 110, 86, .45); opacity: 0; animation: pin-radar 2.4s ease-out infinite; }
-.pin-radar i:nth-child(2) { animation-delay: .8s; }
-.pin-radar i:nth-child(3) { animation-delay: 1.6s; }
-@keyframes pin-radar { from { transform: scale(.15); opacity: .9; } to { transform: scale(1.35); opacity: 0; } }
+/* The 3D pin as a map marker (components/ui.tsx: image pins). */
+.pin-picture { width: 72px; height: 72px; display: block; pointer-events: none; }
 .dispatch .pin-map { margin-bottom: 6px; }
-@media (prefers-reduced-motion: reduce) { .pin-radar i { animation: none; opacity: .35; transform: scale(.8); } }
 
 .dispatch-city { display: block; width: min(100%, 340px); height: auto; margin: 0 auto 4px; }

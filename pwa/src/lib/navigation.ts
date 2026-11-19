@@ -2,6 +2,11 @@ export type RoutePoint = { lat: number; lng: number };
 export type RoadStep = { atKm: number; instruction: string; key: string };
 export type RoadRoute = { path: [number, number][]; km: number; minutes: number; order: number[]; steps: RoadStep[] };
 
+import { bestOrder, type Stop } from "./routeOptimizer";
+
+/** Static estimate, not live traffic: the same 1.3 as StreetRouter on Android. */
+const TRAFFIC_FACTOR = 1.3;
+
 export const validPoint = (p: RoutePoint) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180;
 const distance = (a: RoutePoint, b: RoutePoint) => {
   const rad = Math.PI / 180;
@@ -77,7 +82,7 @@ export function parseRoad(payload: unknown, trip = false): RoadRoute | null {
     return result;
   });
   const order = trip ? (j.waypoints ?? []).slice(1).map((w, i) => ({ i, at: w.waypoint_index })).sort((a, b) => a.at - b.at).map((w) => w.i) : [];
-  return { path: coords.map((c) => [c[1], c[0]]), km: leg.distance / 1000, minutes: Math.max(1, Math.ceil(leg.duration * 1.3 / 60)), order, steps };
+  return { path: coords.map((c) => [c[1], c[0]]), km: leg.distance / 1000, minutes: Math.max(1, Math.ceil(leg.duration * TRAFFIC_FACTOR / 60)), order, steps };
 }
 type RoadPayload = { distance: number; duration: number; geometry?: { coordinates: number[][] }; legs?: { steps?: Step[] }[] };
 
@@ -119,6 +124,33 @@ async function request(service: "route" | "trip", points: RoutePoint[], vehicle?
   finally { clearTimeout(timeout); signal?.removeEventListener("abort", abort); }
 }
 export const streetRoute = (points: RoutePoint[], vehicle?: string | null, signal?: AbortSignal) => request("route", points, vehicle, signal);
+
+/** Street minutes between every pair of points (OSRM `table`), traffic factor included; null when unreachable. */
+export async function streetTable(points: RoutePoint[], vehicle?: string | null, signal?: AbortSignal): Promise<number[][] | null> {
+  if (points.length < 2 || points.some((p) => !validPoint(p)) || signal?.aborted) return null;
+  const profile = ["bicicleta", "bici", "triciclo"].includes(vehicle ?? "") ? "routed-bike" : vehicle === "a_pie" ? "routed-foot" : "routed-car";
+  try {
+    if (!await takeSlot(signal ?? new AbortController().signal)) return null;
+    const coords = points.map((p) => `${p.lng},${p.lat}`).join(";");
+    const r = await fetch(`https://routing.openstreetmap.de/${profile}/table/v1/driving/${coords}?annotations=duration`, { signal });
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (d?.code !== "Ok" || d.durations?.length !== points.length) return null;
+    // An unreachable pair is a long detour, never a free ride.
+    return d.durations.map((row: (number | null)[]) => row.map((s) => (s == null ? 600 : (s * TRAFFIC_FACTOR) / 60)));
+  } catch { return null; }
+}
+
+/**
+ * Best order through the stops by street time, each family's window and Ruma Plus priority (routeOptimizer.ts);
+ * falls back to OSRM's own trip when the table can't be read. Indexes into stops.
+ */
+export async function bestStreetOrder(start: RoutePoint, stops: RoutePoint[], constraints: Stop[], vehicle?: string | null, signal?: AbortSignal) {
+  if (stops.length <= 1) return stops.map((_, i) => i);
+  const m = await streetTable([start, ...stops], vehicle, signal);
+  if (m) return bestOrder(m, constraints);
+  return (await streetTrip(start, stops, vehicle, signal))?.order ?? null;
+}
 export async function streetTrip(start: RoutePoint, stops: RoutePoint[], vehicle?: string | null, signal?: AbortSignal) {
   if (!stops.length) return null;
   if (stops.length === 1) {

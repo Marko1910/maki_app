@@ -38,7 +38,15 @@ import org.osmdroid.views.overlay.Polyline
 import java.io.File
 
 /** A point to drop on the map, with an optional title shown on tap and a pin colour (ARGB). */
-data class OsmMarker(val point: GeoPoint, val label: String? = null, val color: Int? = null, val current: Boolean = false)
+data class OsmMarker(
+    val point: GeoPoint,
+    val label: String? = null,
+    val color: Int? = null,
+    val current: Boolean = false,
+    /** A picture for the marker (e.g. one frame of the 3D Ruma pin), its tip at [tipY] of its height. */
+    val iconRes: Int? = null,
+    val tipY: Float = 1f,
+)
 
 /**
  * OpenStreetMap (osmdroid) map — no API key required. Renders nothing in
@@ -122,13 +130,20 @@ fun OsmMap(
                     infoWindow = null
                     if (m.current) {
                         val density = context.resources.displayMetrics.density
+                        val tint = m.color ?: RumaColors.Rider.toArgb()
                         icon = GradientDrawable().apply {
                             shape = GradientDrawable.OVAL
-                            setColor(RumaColors.Rider.toArgb())
+                            setColor(tint)
                             setStroke((3 * density).toInt(), RumaColors.Surface.toArgb())
                             setSize((22 * density).toInt(), (22 * density).toInt())
                         }
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    }
+                    m.iconRes?.let { res ->
+                        val px = (MARKER_PICTURE_DP * context.resources.displayMetrics.density).toInt()
+                        val bmp = android.graphics.BitmapFactory.decodeResource(context.resources, res)
+                        icon = android.graphics.drawable.BitmapDrawable(context.resources, android.graphics.Bitmap.createScaledBitmap(bmp, px, px, true))
+                        setAnchor(Marker.ANCHOR_CENTER, m.tipY)
                     }
                     // newDrawable(): the default pin is shared by every Marker, so
                     // tinting it in place would repaint all of them.
@@ -248,3 +263,7 @@ private fun ensureOsmConfig(context: Context) {
 
 private const val CACHE_MARKER_KEY = "ruma_user_agent"
 private const val CACHE_MARKER = "${StreetRouter.USER_AGENT}|RumaOsm"
+
+
+/** Width of a picture marker (the 3D pin): big enough to read as the brand, small enough not to hide the block. */
+private const val MARKER_PICTURE_DP = 72
